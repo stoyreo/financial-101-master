@@ -1,0 +1,517 @@
+"use client";
+
+/**
+ * /expenses/actuals
+ *
+ * Import credit-card statements (PDF), reconcile against the budget categories
+ * defined on /expenses, see the gap, the month-vs-month trend, and live AI
+ * recommendations to close the savings gap.
+ *
+ * Re-importing the same statement is a no-op — Transaction.dedupeKey filters
+ * duplicates. ALL prior statements are kept for trend analysis.
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  useStore,
+  selectTotalMonthlyIncome,
+} from "@/lib/store";
+import { thb } from "@/lib/utils";
+import { getCurrentAccount } from "@/lib/accounts";
+import {
+  Card, CardHeader, CardTitle, CardContent, Button, Badge,
+  StatCard, PageHeader, EmptyState, Progress, Select, Input,
+} from "@/components/ui";
+import {
+  Upload, AlertTriangle, TrendingDown, Sparkles, FileText, Trash2,
+  RefreshCw, Filter, ChevronRight,
+} from "lucide-react";
+import {
+  ResponsiveContainer, ComposedChart, XAxis, YAxis, Tooltip as RTip,
+  Legend, Bar, Line, CartesianGrid,
+} from "recharts";
+import {
+  budgetVsActual, actualsByCategory, monthlyTrend, ymKey, ymLabel,
+  totalActuals,
+} from "@/lib/actuals";
+import { BUDGET_CATEGORIES } from "@/lib/categorize";
+import type { Transaction, StatementImport, ExpenseItem } from "@/lib/types";
+import { SavingsOptimizer } from "@/components/dashboard/SavingsOptimizer";
+import { toMonthly } from "@/lib/utils";
+
+const STATUS_BADGE = {
+  ok: { label: "On track", color: "bg-emerald-500/15 text-emerald-500" },
+  warn: { label: "Approaching", color: "bg-amber-500/15 text-amber-500" },
+  over: { label: "Over budget", color: "bg-red-500/15 text-red-500" },
+};
+
+export default function ActualsPage() {
+  const store = useStore();
+  const {
+    expenses, transactions, statementImports, merchantRules,
+    importStatement, recategorizeTransaction, deleteTransaction,
+    clearMonthTransactions, deleteStatementImport, reapplyRules, updateExpense, addExpense,
+  } = store;
+  const monthlyIncome = selectTotalMonthlyIncome(store);
+
+  // ── State ─────────────────────────────────────────────
+  const [uploading, setUploading] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Bucket by credit-card billing month (derived from STATEMENT DATE on the
+  // PDF), so a statement that covers e.g. 23 Mar → 22 Apr is one "April"
+  // bucket regardless of which side of the month each transaction landed.
+  const activeAccount = getCurrentAccount();
+  const accountTransactions = transactions.filter(t => t.accountId === activeAccount.id);
+  const allMonths = useMemo(() => {
+    const set = new Set(accountTransactions.map(t => t.billingMonth));
+    return Array.from(set).sort().reverse();
+  }, [accountTransactions]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  useEffect(() => {
+    if (!selectedMonth && allMonths.length) setSelectedMonth(allMonths[0]);
+  }, [allMonths, selectedMonth]);
+
+  const [filterCat, setFilterCat] = useState<string>("all");
+  const [savingsTarget, setSavingsTarget] = useState<number>(20000);
+
+  // ── Derived data ─────────────────────────────────────
+  const rows = useMemo(
+    () => budgetVsActual(expenses, accountTransactions, selectedMonth || ""),
+    [expenses, accountTransactions, selectedMonth]
+  );
+  const trend = useMemo(() => monthlyTrend(accountTransactions, 12), [accountTransactions]);
+  const monthTotal = selectedMonth ? totalActuals(accountTransactions, selectedMonth) : 0;
+  const monthBudget = rows.reduce((s, r) => s + r.budget, 0);
+  const monthGap = monthTotal - monthBudget;
+  const overCategories = rows.filter(r => r.status === "over");
+
+  const monthTxns = useMemo(
+    () => accountTransactions.filter(t => t.billingMonth === selectedMonth),
+    [accountTransactions, selectedMonth]
+  );
+  const filteredTxns = useMemo(() => {
+    return monthTxns.filter(t => filterCat === "all" || t.category === filterCat);
+  }, [monthTxns, filterCat]);
+
+  const topMerchants = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const t of monthTxns) {
+      if (t.isCredit) continue;
+      map[t.description] = (map[t.description] ?? 0) + t.amount;
+    }
+    return Object.entries(map)
+      .map(([merchant, amount]) => ({ merchant, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+  }, [monthTxns]);
+
+  // ── Handlers ─────────────────────────────────────────
+  async function handleFile(file: File) {
+    const account = getCurrentAccount();
+    const activeAccountId = account.id;
+    const uploadedBy = account.email;  // NEW: capture uploader email
+    setUploading(true);
+    setImportMsg(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const b64 = Buffer.from(buf).toString("base64");
+      const res = await fetch("/api/statements/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activeAccountId,
+          uploadedBy,  // NEW
+          mediaType: file.type || "application/pdf",
+          data: b64,
+          fileName: file.name,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Import failed");
+
+      const { added, duplicates, statementImportId } = importStatement(
+        {
+          accountId,  // NEW
+          fileName: json.statement.fileName,
+          fileHash: json.statement.fileHash,
+          bank: json.statement.bank,
+          statementDate: json.statement.statementDate,
+          billingMonth: json.statement.billingMonth,
+          periodStart: json.statement.periodStart,
+          periodEnd: json.statement.periodEnd,
+          totalCharges: json.statement.totalCharges,
+          totalCredits: json.statement.totalCredits,
+          cardholderName: json.statement.cardholderName,
+          uploadedBy: json.statement.uploadedBy,  // NEW
+          processingTimeMs: json.statement.processingTimeMs,  // NEW
+        },
+        json.transactions as Transaction[],
+      );
+      setSelectedMonth(json.statement.billingMonth);
+      setImportMsg(
+        `Imported ${added} new transaction${added === 1 ? "" : "s"} from ${json.statement.bank} statement dated ${json.statement.statementDate} (billing ${ymLabel(json.statement.billingMonth)})` +
+        (duplicates > 0 ? ` · ${duplicates} duplicate${duplicates === 1 ? "" : "s"} skipped` : "")
+      );
+    } catch (e: any) {
+      setImportMsg(`Error: ${e.message ?? "import failed"}`);
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  // ── Empty state: no imports yet ──────────────────────
+  if (accountTransactions.length === 0) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <PageHeader
+          title="Actuals — Statement Import"
+          subtitle="Reconcile real spending from your credit-card statements against the budget categories on /expenses."
+          actions={<Link href="/expenses"><Button variant="outline" size="sm">Back to Budget</Button></Link>}
+        />
+        <Card>
+          <CardContent className="p-8">
+            <EmptyState
+              icon={Upload}
+              title="No statements imported yet"
+              description="Drop a credit-card statement PDF (UOB, KBank, SCB, KTC, TMB) and the AI will extract every transaction and map it to your budget categories."
+              action={
+                <>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+                  />
+                  <Button onClick={() => fileRef.current?.click()} disabled={uploading}>
+                    <Upload size={14} /> {uploading ? "Extracting…" : "Import Statement PDF"}
+                  </Button>
+                </>
+              }
+            />
+            {importMsg && <p className="mt-4 text-center text-sm text-muted-foreground">{importMsg}</p>}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Main page ────────────────────────────────────────
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Actuals — Statement Import"
+        subtitle="Real spending vs. budget, month over month."
+        actions={
+          <div className="flex gap-2">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
+            />
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              <Upload size={14} /> {uploading ? "Extracting…" : "Import Statement"}
+            </Button>
+            <Link href="/expenses/savings">
+              <Button size="sm"><Sparkles size={14} /> Savings Optimizer</Button>
+            </Link>
+          </div>
+        }
+      />
+
+      {importMsg && (
+        <div className="mb-4 px-3 py-2 rounded-md bg-blue-500/10 text-blue-500 text-sm">{importMsg}</div>
+      )}
+
+      {/* Month selector + summary stats */}
+      <div className="flex items-end gap-4 mb-4 flex-wrap">
+        <div>
+          <label className="text-xs text-muted-foreground">Billing Month</label>
+          <Select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="mt-1 w-44">
+            {allMonths.map(m => <option key={m} value={m}>{ymLabel(m)}</option>)}
+          </Select>
+        </div>
+        <div className="ml-auto text-xs text-muted-foreground">
+          {statementImports.length} statement{statementImports.length === 1 ? "" : "s"} on file
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <StatCard title="Actual Spend" value={thb(monthTotal)} subtitle={selectedMonth ? ymLabel(selectedMonth) : ""} icon={TrendingDown} color={monthGap > 0 ? "red" : "green"} />
+        <StatCard title="Budgeted" value={thb(monthBudget)} icon={FileText} color="blue" />
+        <StatCard title={monthGap > 0 ? "Over Budget" : "Under Budget"} value={thb(Math.abs(monthGap))} icon={AlertTriangle} color={monthGap > 0 ? "red" : "green"} />
+        <StatCard title="Over-budget Categories" value={String(overCategories.length)} subtitle={overCategories.slice(0, 3).map(c => c.category).join(", ") || "—"} icon={AlertTriangle} color="amber" />
+      </div>
+
+      {/* Trend chart */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-sm">Monthly Spend Evolution (last {trend.length} months)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {trend.length < 2 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">
+              Import another statement to start showing month-over-month trend.
+            </p>
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={trend.map(p => ({ month: p.label, actual: Math.round(p.total), budget: Math.round(monthBudget) }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(120,120,120,0.2)" />
+                <XAxis dataKey="month" fontSize={11} />
+                <YAxis fontSize={11} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <RTip formatter={(v: number) => thb(v)} />
+                <Legend />
+                <Bar dataKey="actual" fill="#3b82f6" name="Actual" />
+                <Line type="monotone" dataKey="budget" stroke="#ef4444" name="Budget" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Savings Optimizer Simulator */}
+      {selectedMonth && rows.length > 0 && (
+        <SavingsOptimizer
+          rows={rows}
+          monthlyIncome={monthlyIncome}
+          initialTarget={savingsTarget}
+          onApply={(newBudgets) => {
+            for (const cat of Object.keys(newBudgets)) {
+              const newTotal = newBudgets[cat];
+              const items = expenses.filter(e => e.isActive && e.category === cat);
+              if (items.length === 0) continue;
+              const currentMonthlyTotal = items.reduce(
+                (s, e) => s + toMonthly(e.amount, e.frequency), 0
+              );
+              if (currentMonthlyTotal === 0) {
+                const each = newTotal / items.length;
+                for (const it of items) {
+                  const newMonthly = each;
+                  const inUnit = it.frequency === "yearly"
+                    ? newMonthly * 12
+                    : it.frequency === "one-time"
+                      ? it.amount
+                      : newMonthly;
+                  updateExpense(it.id, { amount: Math.round(inUnit) });
+                }
+                continue;
+              }
+              for (const it of items) {
+                const itMonthly = toMonthly(it.amount, it.frequency);
+                const share = itMonthly / currentMonthlyTotal;
+                const newMonthly = newTotal * share;
+                const inUnit = it.frequency === "yearly"
+                  ? newMonthly * 12
+                  : it.frequency === "one-time"
+                    ? it.amount
+                    : newMonthly;
+                updateExpense(it.id, { amount: Math.round(inUnit) });
+              }
+            }
+            setImportMsg("Optimized plan applied to budget. See /expenses for the new budget amounts.");
+          }}
+        />
+      )}
+
+      {/* Budget vs Actual */}
+      <Card className="mb-6">
+        <CardHeader><CardTitle className="text-sm">Budget vs Actual — {selectedMonth ? ymLabel(selectedMonth) : ""}</CardTitle></CardHeader>
+        <CardContent>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/50">
+                {["Category", "Budget", "Actual", "Used", "Gap", "Status"].map(h => (
+                  <th key={h} className="text-left px-3 py-2 text-xs font-medium text-muted-foreground uppercase">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.category} className="border-b border-border hover:bg-muted/30">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{r.category}</div>
+                    {r.isEssential && <div className="text-xs text-muted-foreground">Essential</div>}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">{thb(r.budget)}</td>
+                  <td className="px-3 py-2 tabular-nums font-medium">{thb(r.actual)}</td>
+                  <td className="px-3 py-2 w-40">
+                    <Progress
+                      value={Math.min(100, r.pctUsed * 100)}
+                      color={r.status === "over" ? "bg-red-500" : r.status === "warn" ? "bg-amber-500" : "bg-emerald-500"}
+                    />
+                    <div className="text-xs text-muted-foreground mt-1 tabular-nums">
+                      {Number.isFinite(r.pctUsed) ? `${(r.pctUsed * 100).toFixed(0)}%` : "—"}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    <span className={r.gap > 0 ? "text-red-500" : "text-emerald-500"}>
+                      {r.gap > 0 ? "+" : ""}{thb(r.gap)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[r.status].color}`}>
+                      {STATUS_BADGE[r.status].label}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="bg-muted/30">
+                <td className="px-3 py-2 font-semibold">TOTAL</td>
+                <td className="px-3 py-2 font-bold tabular-nums">{thb(monthBudget)}</td>
+                <td className="px-3 py-2 font-bold tabular-nums">{thb(monthTotal)}</td>
+                <td colSpan={2} className="px-3 py-2 tabular-nums">
+                  <span className={monthGap > 0 ? "text-red-500" : "text-emerald-500"}>
+                    {monthGap > 0 ? "Over by " : "Under by "}{thb(Math.abs(monthGap))}
+                  </span>
+                </td>
+                <td className="px-3 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </CardContent>
+      </Card>
+
+      {/* Transactions */}
+      <Card className="mb-6">
+        <CardHeader className="flex-row items-center justify-between">
+          <CardTitle className="text-sm">Transactions — {selectedMonth ? ymLabel(selectedMonth) : ""} ({filteredTxns.length})</CardTitle>
+          <div className="flex items-center gap-2">
+            <Filter size={14} className="text-muted-foreground" />
+            <Select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="h-8 text-xs w-40">
+              <option value="all">All Categories</option>
+              {BUDGET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            <Button variant="outline" size="sm" onClick={() => reapplyRules()} title="Re-apply merchant rules to all stored transactions">
+              <RefreshCw size={12} /> Re-apply rules
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  {["Date", "Description", "Card", "Amount", "Category", ""].map(h => (
+                    <th key={h} className="text-left px-3 py-2 text-xs font-medium text-muted-foreground uppercase">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTxns.map(t => (
+                  <tr key={t.id} className={`border-b border-border hover:bg-muted/30 ${t.isCredit ? "opacity-60" : ""}`}>
+                    <td className="px-3 py-2 tabular-nums text-xs whitespace-nowrap">
+                      {t.postDate}
+                      {t.transDate !== t.postDate && (
+                        <div className="text-muted-foreground">trx {t.transDate}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{t.description}</div>
+                      {t.fxAmount && (
+                        <div className="text-xs text-muted-foreground">
+                          {t.fxCurrency} {t.fxAmount.toFixed(2)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
+                      {t.cardLast4 ? `•••• ${t.cardLast4}` : "—"}
+                    </td>
+                    <td className="px-3 py-2 tabular-nums font-medium">
+                      <span className={t.isCredit ? "text-emerald-500" : ""}>
+                        {t.isCredit ? "−" : ""}{thb(t.amount)}
+                      </span>
+                      {t.isCredit && <Badge variant="outline" className="ml-2 text-xs">Refund/Pay</Badge>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Select
+                        value={t.category}
+                        onChange={e => recategorizeTransaction(t.id, e.target.value, true)}
+                        className="h-8 text-xs w-32"
+                        title="Re-mapping a category also saves a merchant rule for future imports."
+                      >
+                        {BUDGET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </Select>
+                      {t.confidence < 0.7 && (
+                        <div className="text-xs text-amber-500 mt-1">Low confidence</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        onClick={() => deleteTransaction(t.id)}
+                        className="p-1 hover:bg-destructive/10 rounded-md"
+                        title="Delete transaction"
+                      >
+                        <Trash2 size={12} className="text-destructive" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Statement history */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Statement History ({statementImports.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            {[...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate)).map(s => (
+              <div key={s.id} className="flex items-center justify-between text-xs p-2 rounded-md hover:bg-muted/50">
+                <div className="flex items-center gap-3">
+                  <FileText size={12} className="text-muted-foreground" />
+                  <span className="font-medium">{ymLabel(s.billingMonth)} · {s.bank}</span>
+                  <span className="text-muted-foreground">{s.fileName}</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="tabular-nums">{thb(s.totalCharges)} charged</span>
+                  <span className="text-muted-foreground tabular-nums">{s.transactionCount} txns added</span>
+                  {s.duplicatesSkipped > 0 && (
+                    <span className="text-amber-500 tabular-nums">{s.duplicatesSkipped} dupes skipped</span>
+                  )}
+                  {/* Clear transactions only — keeps record for trend history */}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Clear all transactions for ${ymLabel(s.billingMonth)}? The statement record stays for trend history.`)) {
+                        clearMonthTransactions(s.billingMonth);
+                      }
+                    }}
+                    className="p-1 hover:bg-amber-500/10 rounded-md"
+                    title="Clear transactions only — keeps statement record for trend history"
+                  >
+                    <RefreshCw size={11} className="text-amber-500" />
+                  </button>
+                  {/* Delete statement + all its transactions entirely */}
+                  <button
+                    onClick={() => {
+                      if (confirm(`Permanently delete the \${ymLabel(s.billingMonth)} \${s.bank} statement and all its transactions? This cannot be undone.`)) {
+                        deleteStatementImport(s.id);
+                      }
+                    }}
+                    className="p-1 hover:bg-destructive/10 rounded-md"
+                    title="Delete statement and all its transactions permanently"
+                  >
+                    <Trash2 size={11} className="text-destructive" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+    </div>
+  );
+}
