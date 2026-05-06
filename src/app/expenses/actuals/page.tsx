@@ -52,7 +52,14 @@ export default function ActualsPage() {
     expenses, transactions, statementImports, merchantRules,
     importStatement, recategorizeTransaction, deleteTransaction,
     clearMonthTransactions, deleteStatementImport, reapplyRules, updateExpense, addExpense,
+    customExpenseCategories,
   } = store;
+
+  // Built-in BUDGET_CATEGORIES + user-defined custom categories.
+  const allCategories = [
+    ...BUDGET_CATEGORIES,
+    ...((customExpenseCategories ?? []).filter(c => !(BUDGET_CATEGORIES as readonly string[]).includes(c))),
+  ];
   const monthlyIncome = selectTotalMonthlyIncome(store);
 
   // ── State ─────────────────────────────────────────────
@@ -381,7 +388,7 @@ export default function ActualsPage() {
             <Filter size={14} className="text-muted-foreground" />
             <Select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="h-8 text-xs w-40">
               <option value="all">All Categories</option>
-              {BUDGET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </Select>
             <Button variant="outline" size="sm" onClick={() => reapplyRules()} title="Re-apply merchant rules to all stored transactions">
               <RefreshCw size={12} /> Re-apply rules
@@ -431,7 +438,7 @@ export default function ActualsPage() {
                         className="h-8 text-xs w-32"
                         title="Re-mapping a category also saves a merchant rule for future imports."
                       >
-                        {BUDGET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </Select>
                       {t.confidence < 0.7 && (
                         <div className="text-xs text-amber-500 mt-1">Low confidence</div>

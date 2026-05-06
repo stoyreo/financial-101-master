@@ -8,6 +8,9 @@ import {
   ResponsiveContainer, Legend, ReferenceLine, BarChart, Bar,
 } from "recharts";
 import { Target, CheckCircle } from "lucide-react";
+import { LiveAISignal } from "@/components/forecast/LiveAISignal";
+import { LiveCoach } from "@/components/forecast/LiveCoach";
+import { WhatIfSimulator } from "@/components/forecast/WhatIfSimulator";
 
 function ForecastTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -75,6 +78,12 @@ export default function ForecastPage() {
         subtitle={`Projections to age ${profile.lifeExpectancy} · Scenario: ${activeScenario?.name ?? "Base Case"}`}
       />
 
+      {/* Live AI signal — auto-rotates through highest-priority insights */}
+      <LiveAISignal />
+
+      {/* Live AI Coach — on-demand Claude-powered summary + alerts */}
+      <LiveCoach />
+
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <div className="bg-card rounded-xl border p-4">
@@ -118,7 +127,12 @@ export default function ForecastPage() {
           <TabsTrigger value="yearly">Yearly Charts</TabsTrigger>
           <TabsTrigger value="monthly">Monthly Charts</TabsTrigger>
           <TabsTrigger value="dti">Debt Ratios</TabsTrigger>
+          <TabsTrigger value="simulator">What-If Simulator</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="simulator">
+          <WhatIfSimulator />
+        </TabsContent>
 
         <TabsContent value="yearly">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

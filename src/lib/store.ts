@@ -38,6 +38,9 @@ interface Store {
   activeScenarioId: string;
   isSeedLoaded: boolean;
 
+  // ── User-defined expense categories (additive over BUDGET_CATEGORIES) ──
+  customExpenseCategories: string[];
+
   // ── Actuals (imported credit-card statements) ─────────
   // Kept FOREVER for month-vs-month evolution & trend analysis.
   transactions: Transaction[];
@@ -60,6 +63,10 @@ interface Store {
   addExpense: (item: Omit<ExpenseItem, "id">) => void;
   updateExpense: (id: string, item: Partial<ExpenseItem>) => void;
   deleteExpense: (id: string) => void;
+
+  // ── Custom expense category actions ──────────────────
+  addExpenseCategory: (name: string) => boolean;        // false if duplicate / blank
+  removeExpenseCategory: (name: string) => void;        // only removes if not used by any expense
 
   // ── Debt actions ──────────────────────────────────────
   addDebt: (item: Omit<DebtAccount, "id">) => void;
@@ -155,6 +162,7 @@ export const useStore = create<Store>()(
       transactions: [],
       merchantRules: buildDefaultMerchantRules(),
       statementImports: [],
+      customExpenseCategories: [],
       yearlyForecast: [],
       monthlyForecast: [],
       localSyncStatus: "idle",
@@ -211,6 +219,29 @@ export const useStore = create<Store>()(
         const f = computeForecasts(state as any);
         state.yearlyForecast = f.yearlyForecast;
         state.monthlyForecast = f.monthlyForecast;
+      }),
+
+      // ── Custom expense categories ────────────────────
+      addExpenseCategory: (name) => {
+        const trimmed = name.trim();
+        if (!trimmed) return false;
+        const existing = new Set([
+          ...(get().customExpenseCategories ?? []).map(c => c.toLowerCase()),
+          // BUDGET_CATEGORIES check inline to avoid cyclic import — known list.
+          "utilities","food","transport","insurance","housing","entertainment",
+          "shopping","travel","family","pet","health","investment","medical","other",
+        ]);
+        if (existing.has(trimmed.toLowerCase())) return false;
+        set((state) => {
+          if (!state.customExpenseCategories) state.customExpenseCategories = [];
+          state.customExpenseCategories.push(trimmed);
+        });
+        return true;
+      },
+      removeExpenseCategory: (name) => set((state) => {
+        const usedBy = state.expenses.some(e => e.category === name);
+        if (usedBy) return; // refuse — user must reassign first
+        state.customExpenseCategories = (state.customExpenseCategories ?? []).filter(c => c !== name);
       }),
 
       // ── Debt ─────────────────────────────────────────
@@ -486,6 +517,9 @@ export const useStore = create<Store>()(
           if (rules !== null) state.merchantRules = rules;
           const imports = preferRemoteList(data.statementImports, state.statementImports);
           if (imports !== null) state.statementImports = imports;
+          if (Array.isArray(data.customExpenseCategories)) {
+            state.customExpenseCategories = data.customExpenseCategories;
+          }
 
           const f = computeForecasts(state as any);
           state.yearlyForecast = f.yearlyForecast;
@@ -504,6 +538,7 @@ export const useStore = create<Store>()(
           tax: s.tax, scenarios: s.scenarios, activeScenarioId: s.activeScenarioId,
           transactions: s.transactions, merchantRules: s.merchantRules,
           statementImports: s.statementImports,
+          customExpenseCategories: s.customExpenseCategories,
         });
       },
       saveUserNamespaceAsync: async () => {
@@ -516,6 +551,7 @@ export const useStore = create<Store>()(
           tax: s.tax, scenarios: s.scenarios, activeScenarioId: s.activeScenarioId,
           transactions: s.transactions, merchantRules: s.merchantRules,
           statementImports: s.statementImports,
+          customExpenseCategories: s.customExpenseCategories,
         };
 
         // ── LOCAL ──
@@ -721,6 +757,7 @@ export const useStore = create<Store>()(
         transactions: state.transactions,
         merchantRules: state.merchantRules,
         statementImports: state.statementImports,
+        customExpenseCategories: state.customExpenseCategories,
         // Exclude sync status from persisted state
         // (localSyncStatus, remoteSyncStatus, lastLocalSaveTime, lastRemoteSaveTime, lastSyncError)
       }),

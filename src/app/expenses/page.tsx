@@ -8,10 +8,10 @@ import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress
 } from "@/components/ui";
-import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles } from "lucide-react";
+import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
-const EXPENSE_CATEGORIES = ["Utilities","Food","Transport","Insurance","Housing","Entertainment","Shopping","Travel","Family","Pet","Health","Investment","Medical","Other"];
+const DEFAULT_EXPENSE_CATEGORIES = ["Utilities","Food","Transport","Insurance","Housing","Entertainment","Shopping","Travel","Family","Pet","Health","Investment","Medical","Other"];
 const FREQUENCIES: Frequency[] = ["monthly", "yearly", "one-time"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16","#ec4899","#14b8a6"];
 
@@ -23,18 +23,71 @@ function defaultExpense(): Omit<ExpenseItem, "id"> {
   };
 }
 
-function ExpenseForm({ item, onChange }: { item: Omit<ExpenseItem, "id">; onChange: (k: string, v: any) => void }) {
+function ExpenseForm({ item, onChange, allCategories, onAddCategory }: {
+  item: Omit<ExpenseItem, "id">;
+  onChange: (k: string, v: any) => void;
+  allCategories: string[];
+  onAddCategory: (name: string) => boolean;
+}) {
+  const [newCat, setNewCat] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAdd = () => {
+    setError(null);
+    const ok = onAddCategory(newCat);
+    if (!ok) {
+      setError("Category exists or is empty.");
+      return;
+    }
+    onChange("category", newCat.trim());
+    setNewCat("");
+    setAdding(false);
+  };
+
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="col-span-2">
         <Label>Name</Label>
         <Input value={item.name} onChange={e => onChange("name", e.target.value)} className="mt-1" placeholder="e.g. Monthly Rent" />
       </div>
-      <div>
+      <div className="col-span-2 sm:col-span-1">
         <Label>Category</Label>
-        <Select value={item.category} onChange={e => onChange("category", e.target.value)} className="mt-1">
-          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </Select>
+        <div className="flex gap-1 mt-1">
+          <Select
+            value={item.category}
+            onChange={e => {
+              if (e.target.value === "__add__") { setAdding(true); return; }
+              onChange("category", e.target.value);
+            }}
+            className="flex-1"
+          >
+            {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            <option value="__add__">+ Add new category…</option>
+          </Select>
+          {!adding && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)} title="Add new category">
+              <Plus size={12} />
+            </Button>
+          )}
+        </div>
+        {adding && (
+          <div className="flex items-center gap-1 mt-2">
+            <Input
+              autoFocus
+              value={newCat}
+              onChange={e => setNewCat(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAdd(); }}}
+              placeholder="e.g. Subscriptions, Education, Charity"
+              className="text-sm"
+            />
+            <Button type="button" size="sm" onClick={handleAdd}>Add</Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => { setAdding(false); setNewCat(""); setError(null); }}>
+              <X size={12} />
+            </Button>
+          </div>
+        )}
+        {error && <p className="text-[11px] text-red-600 mt-1">{error}</p>}
       </div>
       <div>
         <Label>Owner</Label>
@@ -85,13 +138,44 @@ function ExpenseForm({ item, onChange }: { item: Omit<ExpenseItem, "id">; onChan
 }
 
 export default function ExpensesPage() {
-  const { expenses, addExpense, updateExpense, deleteExpense } = useStore();
+  const {
+    expenses, addExpense, updateExpense, deleteExpense,
+    customExpenseCategories, addExpenseCategory, removeExpenseCategory,
+  } = useStore();
   const store = useStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<ExpenseItem, "id">>(defaultExpense());
   const [filterCat, setFilterCat] = useState("all");
   const [filterEssential, setFilterEssential] = useState<"all" | "essential" | "discretionary">("all");
+  const [catManagerOpen, setCatManagerOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState("");
+  const [catError, setCatError] = useState<string | null>(null);
+
+  const allCategories = [
+    ...DEFAULT_EXPENSE_CATEGORIES,
+    ...((customExpenseCategories ?? []).filter(c => !DEFAULT_EXPENSE_CATEGORIES.includes(c))),
+  ];
+
+  const handleAddCategoryFromManager = () => {
+    setCatError(null);
+    const ok = addExpenseCategory(newCatName);
+    if (!ok) {
+      setCatError("Category exists or is empty.");
+      return;
+    }
+    setNewCatName("");
+  };
+
+  const handleRemoveCategory = (name: string) => {
+    if (expenses.some(e => e.category === name)) {
+      alert(`Can't remove "${name}" — it's used by one or more expense items. Reassign them first.`);
+      return;
+    }
+    if (confirm(`Remove category "${name}"?`)) {
+      removeExpenseCategory(name);
+    }
+  };
 
   const totalMonthly = selectTotalMonthlyExpenses(store);
   const essentialMonthly = expenses.filter(e => e.isActive && e.isEssential)
@@ -131,6 +215,9 @@ export default function ExpensesPage() {
         subtitle="Plan your monthly, yearly, and one-time budget with inflation"
         actions={
           <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCatManagerOpen(true)}>
+              <Tag size={14} /> Categories
+            </Button>
             <Link href="/expenses/savings">
               <Button variant="outline" size="sm"><Sparkles size={14} /> Savings Optimizer</Button>
             </Link>
@@ -216,7 +303,7 @@ export default function ExpensesPage() {
         <Filter size={14} className="text-muted-foreground" />
         <Select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="w-40 h-8 text-xs">
           <option value="all">All Categories</option>
-          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
         </Select>
         {(["all", "essential", "discretionary"] as const).map(f => (
           <button key={f}
@@ -295,10 +382,86 @@ export default function ExpensesPage() {
       )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? "Edit Expense" : "Add Expense"} className="max-w-2xl">
-        <ExpenseForm item={formData} onChange={setField} />
+        <ExpenseForm
+          item={formData}
+          onChange={setField}
+          allCategories={allCategories}
+          onAddCategory={addExpenseCategory}
+        />
         <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!formData.name || formData.amount <= 0}>Save</Button>
+        </div>
+      </Modal>
+
+      {/* Category manager modal */}
+      <Modal open={catManagerOpen} onClose={() => setCatManagerOpen(false)} title="Manage Expense Categories" className="max-w-lg">
+        <div className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Built-in categories are always available. Add your own to track spending in custom buckets
+            (e.g. Subscriptions, Education, Charity, Childcare).
+          </p>
+
+          <div>
+            <Label>Add new category</Label>
+            <div className="flex gap-2 mt-1">
+              <Input
+                value={newCatName}
+                onChange={e => setNewCatName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleAddCategoryFromManager(); }}}
+                placeholder="e.g. Subscriptions"
+                className="text-sm flex-1"
+              />
+              <Button size="sm" onClick={handleAddCategoryFromManager} disabled={!newCatName.trim()}>
+                <Plus size={12} /> Add
+              </Button>
+            </div>
+            {catError && <p className="text-[11px] text-red-600 mt-1">{catError}</p>}
+          </div>
+
+          <div>
+            <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+              Built-in
+            </div>
+            <div className="flex gap-1.5 flex-wrap">
+              {DEFAULT_EXPENSE_CATEGORIES.map(c => (
+                <Badge key={c} variant="outline">{c}</Badge>
+              ))}
+            </div>
+          </div>
+
+          {(customExpenseCategories ?? []).length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">
+                Custom ({(customExpenseCategories ?? []).length})
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {(customExpenseCategories ?? []).map(c => {
+                  const inUse = expenses.some(e => e.category === c);
+                  return (
+                    <span
+                      key={c}
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                        inUse ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {c}
+                      <button
+                        onClick={() => handleRemoveCategory(c)}
+                        className="hover:bg-destructive/20 rounded-full p-0.5"
+                        title={inUse ? `In use by ${expenses.filter(e => e.category === c).length} item(s) — reassign first` : "Remove category"}
+                      >
+                        <X size={10} />
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end mt-4 pt-4 border-t border-border">
+          <Button variant="outline" onClick={() => setCatManagerOpen(false)}>Done</Button>
         </div>
       </Modal>
     </div>
