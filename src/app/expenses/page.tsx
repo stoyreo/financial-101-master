@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+
+export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { useStore, selectTotalMonthlyExpenses } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
