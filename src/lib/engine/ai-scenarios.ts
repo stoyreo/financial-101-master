@@ -7,6 +7,7 @@
 import type {
   Profile, IncomeItem, ExpenseItem, DebtAccount,
   InvestmentAccount, RetirementAssumptions, TaxAssumptions,
+  ScenarioAssumptions, YearlyForecastRow,
 } from "../types";
 import { safeDivide, toYearly, applyGrowth, calcAge } from "../utils";
 
@@ -722,6 +723,165 @@ export function analyzeAlstomSTI(): AlstomSTIAnalysis {
     disclaimer:
       "Estimate based on the 40/30/20/10 weighting assumption (aEBIT / FCF / Orders / Sales) commonly applied to Alstom's Group STI framework. Your individual plan may use different weights, a different aEBIT threshold, an ESG/CO2 modifier, or personal-objective components. Final audited FY 2025/26 results and any Remuneration Committee discretion may shift the outcome. Consult your HR-provided STI letter for your personal weighting and targets.",
   };
+}
+
+// ============================================================================
+// LEVER SENSITIVITY ANALYSIS
+// Pure TS, no LLM call needed — fast, deterministic.
+// For each key lever, computes what a ±5% nudge does to net worth and payoff.
+// ============================================================================
+
+export interface LeverSensitivityResult {
+  field: keyof ScenarioAssumptions;
+  label: string;
+  deltaNetWorthPct: number;   // % change in final net worth vs current sim
+  deltaPayoffYears: number;   // years sooner (<0) or later (>0) for mortgage payoff
+  direction: "up" | "down";  // which direction helps
+  rationale: string;
+  confidence: number;         // 60 = sensitivity-only, 90 = corroborated by AI module
+}
+
+type ForecastFn = (a: ScenarioAssumptions) => YearlyForecastRow[];
+
+const LEVERS: Array<{
+  field: keyof ScenarioAssumptions;
+  label: string;
+  nudge: number;   // absolute nudge in field units
+  goodDirection: "up" | "down";
+  rationale: (pct: number) => string;
+}> = [
+  {
+    field: "investmentReturnRate",
+    label: "Investment return +0.5%",
+    nudge: 0.005,
+    goodDirection: "up",
+    rationale: (pct) => `Compounding boost from +0.5% return adds ${pct.toFixed(1)}% net worth over 30yr`,
+  },
+  {
+    field: "incomeGrowthRate",
+    label: "Income growth +1%",
+    nudge: 0.01,
+    goodDirection: "up",
+    rationale: (pct) => `Higher salary trajectory adds ${pct.toFixed(1)}% to lifetime net worth`,
+  },
+  {
+    field: "inflationRate",
+    label: "Inflation -0.5%",
+    nudge: -0.005,
+    goodDirection: "down",
+    rationale: (pct) => `Lower CPI preserves ${pct.toFixed(1)}% of real purchasing power`,
+  },
+  {
+    field: "mortgageExtraMonthlyPayment",
+    label: "Extra mortgage payment +฿5K",
+    nudge: 5_000,
+    goodDirection: "up",
+    rationale: (pct) => `Extra ฿5K/mo cuts interest load, improving net worth by ${pct.toFixed(1)}%`,
+  },
+  {
+    field: "annualLumpSumPrepayment",
+    label: "Annual lump-sum +฿50K",
+    nudge: 50_000,
+    goodDirection: "up",
+    rationale: (pct) => `One extra lump sum per year improves net worth by ${pct.toFixed(1)}%`,
+  },
+  {
+    field: "retirementAge",
+    label: "Retire 2 years later",
+    nudge: 2,
+    goodDirection: "up",
+    rationale: (pct) => `Two more earning years add ${pct.toFixed(1)}% to terminal net worth`,
+  },
+  {
+    field: "annualBonusAmount",
+    label: "Annual bonus +฿50K",
+    nudge: 50_000,
+    goodDirection: "up",
+    rationale: (pct) => `Extra ฿50K bonus/yr compounds into ${pct.toFixed(1)}% more net worth`,
+  },
+  {
+    field: "taxReliefInvestmentAmount",
+    label: "Tax-relief contribution +฿50K",
+    nudge: 50_000,
+    goodDirection: "up",
+    rationale: (pct) => `Maximising tax-advantaged buckets adds ${pct.toFixed(1)}%`,
+  },
+  {
+    field: "salaryRaiseFactor",
+    label: "Salary raise +5%",
+    nudge: 0.05,
+    goodDirection: "up",
+    rationale: (pct) => `A one-off 5% raise compounds across career for +${pct.toFixed(1)}%`,
+  },
+  {
+    field: "windfallAmount",
+    label: "Windfall +฿100K",
+    nudge: 100_000,
+    goodDirection: "up",
+    rationale: (pct) => `A ฿100K lump inflow invested today grows by ${pct.toFixed(1)}%`,
+  },
+];
+
+export function analyzeLeverSensitivity(input: {
+  base: ScenarioAssumptions;
+  current: ScenarioAssumptions;
+  forecast: ForecastFn;
+}): LeverSensitivityResult[] {
+  const { current, forecast } = input;
+
+  const currentRows = forecast(current);
+  const finalIdx = currentRows.length - 1;
+  const currentFinalNW = currentRows[finalIdx]?.netWorth ?? 0;
+
+  const findPayoffYear = (rows: YearlyForecastRow[]): number | null => {
+    const r = rows.find(r => r.isMortgagePaidOff && (rows[0]?.mortgageBalance ?? 0) > 0);
+    return r ? r.year : null;
+  };
+  const currentPayoffYear = findPayoffYear(currentRows);
+
+  const results: LeverSensitivityResult[] = [];
+
+  for (const lever of LEVERS) {
+    const currentVal = (current[lever.field] as number | undefined) ?? 0;
+    const nudgedVal = currentVal + lever.nudge;
+    const nudgedAssumptions: ScenarioAssumptions = { ...current, [lever.field]: nudgedVal };
+
+    const nudgedRows = forecast(nudgedAssumptions);
+    const nudgedFinalNW = nudgedRows[finalIdx]?.netWorth ?? 0;
+    const nudgedPayoffYear = findPayoffYear(nudgedRows);
+
+    const deltaNetWorthPct =
+      currentFinalNW !== 0
+        ? ((nudgedFinalNW - currentFinalNW) / Math.abs(currentFinalNW)) * 100
+        : 0;
+
+    const deltaPayoffYears =
+      currentPayoffYear !== null && nudgedPayoffYear !== null
+        ? nudgedPayoffYear - currentPayoffYear
+        : 0;
+
+    // Confidence: 90 if lever is well-understood (returns/rates), 60 for career shocks
+    const highConfidenceFields: Array<keyof ScenarioAssumptions> = [
+      "investmentReturnRate", "inflationRate", "mortgageExtraMonthlyPayment",
+      "annualLumpSumPrepayment", "taxReliefInvestmentAmount",
+    ];
+    const confidence = highConfidenceFields.includes(lever.field) ? 90 : 60;
+
+    const absDelta = Math.abs(deltaNetWorthPct);
+    results.push({
+      field: lever.field,
+      label: lever.label,
+      deltaNetWorthPct,
+      deltaPayoffYears,
+      direction: lever.goodDirection,
+      rationale: lever.rationale(absDelta),
+      confidence,
+    });
+  }
+
+  // Sort by absolute impact descending
+  results.sort((a, b) => Math.abs(b.deltaNetWorthPct) - Math.abs(a.deltaNetWorthPct));
+  return results;
 }
 
 /**

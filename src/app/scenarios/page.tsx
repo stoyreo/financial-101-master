@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { seedScenarios } from "@/lib/seed";
 import { generateYearlyForecast } from "@/lib/engine/forecast";
 import {
   analyzeInvestmentOptimization,
@@ -26,7 +27,7 @@ import {
 import {
   Plus, Edit, Trash2, Play, BarChart3, CheckCircle, Zap, TrendingUp,
   AlertCircle, Shield, PiggyBank, Globe, Train, ExternalLink,
-  ArrowUpRight, ArrowDownRight, Minus,
+  ArrowUpRight, ArrowDownRight, Minus, Copy,
 } from "lucide-react";
 
 const SCENARIO_COLORS = ["#3b82f6","#10b981","#ef4444","#8b5cf6","#f59e0b","#06b6d4","#f97316"];
@@ -102,6 +103,8 @@ export default function ScenariosPage() {
   const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
   const [alstomSTI, setAlstomSTI] = useState<AlstomSTIAnalysis | null>(null);
   const [loadingAnalyses, setLoadingAnalyses] = useState(false);
+  const [filter, setFilter] = useState<"all" | "good" | "bad" | "custom">("all");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     setLoadingAnalyses(true);
@@ -205,27 +208,123 @@ export default function ScenariosPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {scenarios.map((s) => {
-              const isActive = s.id === activeScenarioId;
-              return (
-                <Card key={s.id} className={`hover:shadow-md transition-shadow ${isActive ? "ring-2 ring-primary" : ""}`}>
-                  <CardContent className="p-4">
-                    <div className="font-semibold text-sm">{s.name}</div>
-                    <p className="text-xs text-muted-foreground mb-3 line-clamp-2">{s.description}</p>
-                    <div className="flex gap-2 mt-3">
-                      <Button size="sm" variant={isActive ? "default" : "outline"} className="flex-1 text-xs"
-                        onClick={() => setActiveScenario(s.id)}>
-                        <Play size={11} />{isActive ? "Active" : "Activate"}
-                      </Button>
-                    </div>
-                    {isActive && (
-                      <div className="mt-2 flex items-center gap-1 text-xs text-primary"><CheckCircle size={11} /> Currently active</div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
+          <div className="space-y-4">
+            {/* Filter Strip */}
+            <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+              <Input
+                placeholder="Search scenarios..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="flex-1"
+              />
+              <div className="flex gap-2 flex-wrap">
+                {(["all", "good", "bad", "custom"] as const).map((f) => (
+                  <Button
+                    key={f}
+                    size="sm"
+                    variant={filter === f ? "default" : "outline"}
+                    onClick={() => setFilter(f)}
+                    className="capitalize"
+                  >
+                    {f === "all" ? "All" : f === "good" ? "Good" : f === "bad" ? "Bad" : "Custom"}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            {/* Scenarios Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {scenarios
+                .filter((s) => {
+                  // Text filter
+                  const matchesQuery = query === "" ||
+                    s.name.toLowerCase().includes(query.toLowerCase()) ||
+                    s.description.toLowerCase().includes(query.toLowerCase());
+
+                  if (!matchesQuery) return false;
+
+                  // Tag filter
+                  if (filter === "all") return true;
+                  if (filter === "good") return s.tag === "good";
+                  if (filter === "bad") return s.tag === "bad";
+                  if (filter === "custom") {
+                    // Custom = not in seed list OR explicitly tagged custom
+                    const isInSeed = seedScenarios.some(seed => seed.id === s.id);
+                    return !isInSeed || s.tag === "custom";
+                  }
+                  return true;
+                })
+                .sort((a, b) => {
+                  // Sort: seed first (by original order), then user-created at end
+                  const aInSeed = seedScenarios.findIndex(seed => seed.id === a.id);
+                  const bInSeed = seedScenarios.findIndex(seed => seed.id === b.id);
+
+                  if (aInSeed !== -1 && bInSeed !== -1) return aInSeed - bInSeed;
+                  if (aInSeed !== -1) return -1;
+                  if (bInSeed !== -1) return 1;
+                  return a.name.localeCompare(b.name);
+                })
+                .map((s) => {
+                  const isActive = s.id === activeScenarioId;
+                  const isBaseScenario = s.isBase;
+                  return (
+                    <Card key={s.id} className={`hover:shadow-md transition-shadow flex flex-col ${isActive ? "ring-2 ring-primary" : ""}`}>
+                      <CardContent className="p-3 flex-1 flex flex-col">
+                        <div className="font-semibold text-sm">{s.name}</div>
+                        <p className="text-[11px] text-muted-foreground mb-3 line-clamp-2 flex-1">{s.description}</p>
+
+                        {/* 4-button action row */}
+                        <div className="flex gap-1 items-center mt-auto pt-2">
+                          {/* Activate button (~60% width) */}
+                          <Button
+                            size="sm"
+                            variant={isActive ? "default" : "ghost"}
+                            className="flex-1 text-xs h-7"
+                            onClick={() => setActiveScenario(s.id)}
+                          >
+                            {isActive ? "Active" : "Activate"}
+                          </Button>
+
+                          {/* Edit icon button */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => openEdit(s)}
+                            title="Edit"
+                          >
+                            <Edit size={12} />
+                          </Button>
+
+                          {/* Copy icon button */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0"
+                            onClick={() => addScenario({ ...s, name: s.name + " (copy)", isBase: false, tag: undefined })}
+                            title="Copy"
+                          >
+                            <Copy size={12} />
+                          </Button>
+
+                          {/* Trash icon button (only for non-base) */}
+                          {!isBaseScenario && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0"
+                              onClick={() => handleDelete(s.id)}
+                              title="Delete"
+                            >
+                              <Trash2 size={12} />
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+            </div>
           </div>
         </TabsContent>
 

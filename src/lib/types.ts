@@ -172,6 +172,7 @@ export interface Scenario {
   color: string;
   assumptions: ScenarioAssumptions;
   createdAt: string;
+  tag?: "good" | "bad" | "custom";
 }
 
 // ── Forecast Results ─────────────────────────────────────
