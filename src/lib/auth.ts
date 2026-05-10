@@ -91,6 +91,12 @@ export async function clearSession() {
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem("fp_current_user");
 
+  // 🔐 Clear the Zustand store to prevent the next user from seeing this user's data
+  try {
+    const { clearStore } = await import("./store");
+    clearStore();
+  } catch { /* non-fatal */ }
+
   // Async sign-out from Supabase (fire-and-forget for backward compatibility)
   try {
     const { getSupabaseBrowser } = await import("./supabase/client");

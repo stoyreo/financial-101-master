@@ -1,8 +1,11 @@
 /**
  * ACCOUNT MANAGEMENT
  * ──────────────────
- * Single account (account switching removed)
+ * Per-user accounts to ensure data isolation.
+ * Each user gets their own account so transactions don't leak between users.
  */
+
+import { getSession } from "./auth";
 
 export type UserRole = "admin";
 
@@ -15,7 +18,7 @@ export interface Account {
 }
 
 /**
- * Single account for the Financial 101 Master crafted by Toy app
+ * Single account for the Financial 101 Master crafted by Toy app (legacy)
  */
 export const MAIN_ACCOUNT: Account = {
   id: "toy",
@@ -26,10 +29,25 @@ export const MAIN_ACCOUNT: Account = {
 };
 
 /**
- * Get the current account (always returns main account)
+ * Get the current account based on the authenticated user.
+ * 🔐 CRITICAL: Each user has a unique accountId to prevent data leakage.
+ * The accountId is used to filter transactions, so different users must have different IDs.
  */
 export function getCurrentAccount(): Account {
-  return MAIN_ACCOUNT;
+  const session = getSession();
+  if (!session) {
+    // Fallback if no session (SSR, etc.)
+    return MAIN_ACCOUNT;
+  }
+
+  // 🔐 Use userId as accountId to ensure unique per-user isolation
+  return {
+    id: session.userId,  // Unique per user, not shared
+    name: session.username,
+    email: "", // Not available in session
+    role: session.role as UserRole,
+    createdAt: new Date().toISOString(),
+  };
 }
 
 /**

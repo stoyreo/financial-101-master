@@ -745,7 +745,10 @@ export const useStore = create<Store>()(
         if (typeof window === "undefined") return {
           getItem: () => null, setItem: () => {}, removeItem: () => {},
         };
-        return localStorage;
+        // 🔐 Use sessionStorage instead of localStorage to prevent cross-user data leakage
+        // localStorage persists across browser sessions, causing the new user to see the
+        // previous user's cached financial data. sessionStorage clears when the tab closes.
+        return sessionStorage;
       }),
       partialize: (state) => ({
         profile: state.profile,
@@ -768,6 +771,45 @@ export const useStore = create<Store>()(
     }
   )
 );
+
+/**
+ * 🔐 CRITICAL: Clear the store when user logs out.
+ * Prevents the next user from seeing the previous user's cached financial data.
+ * Must be called whenever clearSession() is called in auth.ts.
+ */
+export function clearStore() {
+  const store = useStore.getState();
+  useStore.setState({
+    profile: seedProfile,
+    incomes: seedIncomes,
+    expenses: seedExpenses,
+    debts: seedDebts,
+    investments: seedInvestments,
+    retirement: seedRetirement,
+    tax: seedTax,
+    scenarios: seedScenarios,
+    activeScenarioId: "base",
+    isSeedLoaded: true,
+    transactions: [],
+    merchantRules: buildDefaultMerchantRules(),
+    statementImports: [],
+    customExpenseCategories: [],
+    yearlyForecast: [],
+    monthlyForecast: [],
+    localSyncStatus: "idle",
+    remoteSyncStatus: "idle",
+    lastLocalSaveTime: null,
+    lastRemoteSaveTime: null,
+    lastSyncError: null,
+  }, true); // replace = true to skip Zustand's immer wrapper
+
+  // Also clear sessionStorage explicitly
+  if (typeof window !== "undefined") {
+    try {
+      sessionStorage.removeItem("financial-planner-storage-v3");
+    } catch { /* noop */ }
+  }
+}
 
 // ── Selectors ─────────────────────────────────────────────
 export const selectActiveScenario = (s: Store) =>
