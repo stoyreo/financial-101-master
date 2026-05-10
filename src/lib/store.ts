@@ -95,7 +95,7 @@ interface Store {
   ) => { added: number; duplicates: number; statementImportId: string };
   recategorizeTransaction: (txnId: string, newCategory: string, learnRule?: boolean) => void;
   deleteTransaction: (txnId: string) => void;
-  clearMonthTransactions: (billingMonth: string) => void;
+  clearMonthTransactions: (billingMonth: string, accountId?: string) => void;
   deleteStatementImport: (statementId: string) => void;
   addMerchantRule: (pattern: string, category: string, isEssential?: boolean) => void;
   removeMerchantRule: (ruleId: string) => void;
@@ -396,10 +396,14 @@ export const useStore = create<Store>()(
         state.transactions = state.transactions.filter((t: Transaction) => t.id !== txnId);
       }),
 
-      clearMonthTransactions: (billingMonth) => set((state) => {
-        state.transactions = state.transactions.filter(
-          (t: Transaction) => t.billingMonth !== billingMonth
-        );
+      clearMonthTransactions: (billingMonth, accountId) => set((state) => {
+        // When accountId is provided, only clear that account's transactions for the month.
+        // This prevents cross-account data loss when multiple users share the same store.
+        state.transactions = state.transactions.filter((t: Transaction) => {
+          if (t.billingMonth !== billingMonth) return true;          // different month — keep
+          if (!accountId) return false;                              // no scope — clear all (legacy)
+          return t.accountId !== accountId;                         // different account — keep
+        });
       }),
 
       deleteStatementImport: (statementId) => set((state) => {

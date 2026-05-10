@@ -49,11 +49,24 @@ const STATUS_BADGE = {
 export default function ActualsPage() {
   const store = useStore();
   const {
-    expenses, transactions, statementImports, merchantRules,
+    expenses, merchantRules,
     importStatement, recategorizeTransaction, deleteTransaction,
     clearMonthTransactions, deleteStatementImport, reapplyRules, updateExpense, addExpense,
     customExpenseCategories,
   } = store;
+
+  // ── Account isolation ─────────────────────────────────
+  // CRITICAL: always filter by activeAccountId so no account's data leaks
+  // into another account's view. The store holds ALL accounts' transactions
+  // in a single flat array; the accountId field is the isolation boundary.
+  const account = getCurrentAccount();
+  const activeAccountId = account.id;
+  const transactions = store.transactions.filter(
+    t => t.accountId === activeAccountId || !t.accountId  // !t.accountId: legacy rows pre-isolation
+  );
+  const statementImports = store.statementImports.filter(
+    i => i.accountId === activeAccountId || !i.accountId
+  );
 
   // Built-in BUDGET_CATEGORIES + user-defined custom categories.
   const allCategories = [
@@ -116,8 +129,6 @@ export default function ActualsPage() {
 
   // ── Handlers ─────────────────────────────────────────
   async function handleFile(file: File) {
-    const account = getCurrentAccount();
-    const activeAccountId = account.id;
     setUploading(true);
     setImportMsg(null);
     try {
@@ -138,6 +149,7 @@ export default function ActualsPage() {
 
       const { added, duplicates, statementImportId } = importStatement(
         {
+          accountId: activeAccountId,          // REQUIRED — scopes this import to the active account
           fileName: json.statement.fileName,
           fileHash: json.statement.fileHash,
           bank: json.statement.bank,
@@ -485,7 +497,7 @@ export default function ActualsPage() {
                   <button
                     onClick={() => {
                       if (confirm(`Clear all transactions for ${ymLabel(s.billingMonth)}? The statement record stays for trend history.`)) {
-                        clearMonthTransactions(s.billingMonth);
+                        clearMonthTransactions(s.billingMonth, activeAccountId);
                       }
                     }}
                     className="p-1 hover:bg-amber-500/10 rounded-md"
