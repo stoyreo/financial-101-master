@@ -123,7 +123,7 @@ export async function addUser(input: {
   }
 
   const id = `user_${username.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${Date.now().toString(36)}`;
-  const storageKey = `fp_data_${username.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+  const storageKey = `fp_data_${id}`; // 🔐 Use unique ID, not username (prevents collisions)
   const passwordHash = await sha256(input.password);
 
   const newUser: AppUser = {
@@ -534,7 +534,7 @@ export async function findOrCreateUserByEmail(email: string, supabaseUserId: str
 
   const username = normalizedEmail.split("@")[0];
   const id = `user_${supabaseUserId.slice(0, 12)}`;
-  const storageKey = `fp_data_${username.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+  const storageKey = `fp_data_${supabaseUserId}`; // 🔐 Use unique supabaseUserId, not username (prevents collisions)
 
   const isAdminEmail =
     normalizedEmail === "toy.theeranan@gmail.com" ||

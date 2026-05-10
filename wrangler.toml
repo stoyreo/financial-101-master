@@ -1,6 +1,6 @@
 name = "financial-101-master"
 compatibility_date = "2024-01-01"
-pages_build_output_dir = "out"
+pages_build_output_dir = ".next"
 
 # KV namespace binding removed — app now uses Supabase for data persistence
 # kv_namespaces = [
