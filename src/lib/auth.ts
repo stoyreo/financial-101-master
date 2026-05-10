@@ -92,9 +92,30 @@ export async function clearSession() {
   localStorage.removeItem("fp_current_user");
 
   // 🔐 Clear the Zustand store to prevent the next user from seeing this user's data
+  // Use dynamic import to avoid circular dependency: accounts.ts -> auth.ts -> store.ts -> accounts.ts
   try {
-    const { clearStore } = await import("./store");
-    clearStore();
+    const { useStore } = await import("./store");
+    // Reset store to seed state without calling clearStore (avoids circular import)
+    const { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios, buildDefaultMerchantRules } = await import("./seed");
+    useStore.setState({
+      profile: seedProfile,
+      incomes: seedIncomes,
+      expenses: seedExpenses,
+      debts: seedDebts,
+      investments: seedInvestments,
+      retirement: seedRetirement,
+      tax: seedTax,
+      scenarios: seedScenarios,
+      activeScenarioId: "base",
+      isSeedLoaded: true,
+      transactions: [],
+      merchantRules: buildDefaultMerchantRules(),
+      statementImports: [],
+      customExpenseCategories: [],
+      yearlyForecast: [],
+      monthlyForecast: [],
+    }, true);
+    sessionStorage.removeItem("financial-planner-storage-v3");
   } catch { /* non-fatal */ }
 
   // Async sign-out from Supabase (fire-and-forget for backward compatibility)

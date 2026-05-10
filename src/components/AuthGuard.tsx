@@ -38,13 +38,20 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
               synthesizeSession(appUser);
               if (__loadedStorageKey !== appUser.storageKey) {
                 __loadedStorageKey = appUser.storageKey;
-                loadUserNamespace();
+                try {
+                  await loadUserNamespace();
+                } catch (err) {
+                  console.error("[AuthGuard] Failed to load user namespace:", err);
+                  // Continue anyway - store will use localStorage fallback
+                }
               }
               setAuthed(true);
               return;
             }
           }
-        } catch { /* non-fatal */ }
+        } catch (err) {
+          console.error("[AuthGuard] OAuth callback failed:", err);
+        }
 
         clearSession();
         router.replace("/login");
@@ -57,7 +64,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // with the 800ms AutoSync debounce and wipes freshly-imported data.
     if (__loadedStorageKey !== session.storageKey) {
       __loadedStorageKey = session.storageKey;
-      loadUserNamespace();
+      try {
+        // Don't await - let it load in background, but catch errors
+        loadUserNamespace().catch(err => {
+          console.error("[AuthGuard] Failed to load user namespace:", err);
+          // Store will fall back to localStorage
+        });
+      } catch (err) {
+        console.error("[AuthGuard] loadUserNamespace failed:", err);
+      }
     }
     setAuthed(true);
     didCheckRef.current = true;

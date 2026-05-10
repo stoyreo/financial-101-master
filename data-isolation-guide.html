@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Isolation Prevention Guide - Financial 101 Master</title>
+    <style>
+        :root {
+            --primary: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --bg: #f9fafb;
+            --border: #e5e7eb;
+            --text: #1f2937;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            background: linear-gradient(135deg, var(--primary), #dc2626);
+            color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin: 2rem 0 1rem 0;
+            color: var(--primary);
+            border-bottom: 2px solid var(--primary);
+            padding-bottom: 0.5rem;
+        }
+
+        h3 {
+            font-size: 1.1rem;
+            margin: 1.5rem 0 0.75rem 0;
+            color: var(--info);
+        }
+
+        .incident {
+            background: white;
+            border-left: 4px solid var(--primary);
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .vulnerability {
+            background: white;
+            border-left: 4px solid var(--warning);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .vulnerability.fixed {
+            border-left-color: var(--success);
+        }
+
+        .fix-badge {
+            display: inline-block;
+            background: var(--success);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .code-block {
+            background: #1f2937;
+            color: #e5e7eb;
+            padding: 1rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 1rem 0;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .checklist {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .checklist ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .checklist li {
+            padding: 0.5rem 0;
+            padding-left: 1.5rem;
+            position: relative;
+        }
+
+        .checklist li:before {
+            content: "☐";
+            position: absolute;
+            left: 0;
+            color: var(--info);
+            font-weight: bold;
+        }
+
+        .test-pattern {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        .blindspot {
+            background: #fef3c7;
+            border-left: 4px solid var(--warning);
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-radius: 4px;
+        }
+
+        .file-list {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .file-item {
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .file-item:last-child {
+            border-bottom: none;
+        }
+
+        .warning {
+            background: #fef3c7;
+            border-left: 4px solid var(--warning);
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        .success {
+            background: #ecfdf5;
+            border-left: 4px solid var(--success);
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        footer {
+            margin-top: 3rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔐 Multi-User Data Isolation Prevention Guide</h1>
+            <p>Lessons learned from Financial 101 Master incident (May 10, 2026)</p>
+        </header>
+
+        <div class="incident">
+            <h2>📋 The Incident</h2>
+            <p><strong>Date:</strong> May 10, 2026</p>
+            <p><strong>Severity:</strong> CRITICAL — New users could see previous users' statement history</p>
+            <p><strong>Root Cause:</strong> Three cascading data isolation vulnerabilities that only manifested in multi-user scenarios</p>
+            <p><strong>Impact:</strong> Complete financial data leakage between unrelated users</p>
+            <p><strong>Detection Method:</strong> Manual user testing (User A uploads statements → User B signs up → User B sees User A's data)</p>
+        </div>
+
+        <h2>🚨 Three Vulnerabilities (All Fixed May 10)</h2>
+
+        <div class="vulnerability fixed">
+            <span class="fix-badge">✓ FIXED</span>
+            <h3>Vulnerability #1: localStorage Persisting Across Users</h3>
+            <p><strong>Problem:</strong> Zustand store used <code>localStorage</code>, which persists indefinitely across browser sessions. When User A logs out and User B logs in on the same tab, User B's page load hydrates the store from localStorage—User A's cached data.</p>
+            <p><strong>Why It's Invisible:</strong> Single-user testing works fine. Only manifests when two different users use the same browser tab.</p>
+            <p><strong>Fix Applied:</strong> Changed storage backend from <code>localStorage</code> → <code>sessionStorage</code> in <code>src/lib/store.ts</code></p>
+            <div class="code-block">// BEFORE (VULNERABLE)
+storage: createJSONStorage(() => localStorage)
+
+// AFTER (SECURE)
+storage: createJSONStorage(() => sessionStorage)</div>
+            <p><strong>Why This Works:</strong> sessionStorage clears when the browser tab closes, so each session is isolated.</p>
+        </div>
+
+        <div class="vulnerability fixed">
+            <span class="fix-badge">✓ FIXED</span>
+            <h3>Vulnerability #2: Store Not Cleared on Logout</h3>
+            <p><strong>Problem:</strong> Even with sessionStorage, if User A logs out and User B logs in on the <strong>same tab without closing it</strong>, the in-memory Zustand store still contained User A's data.</p>
+            <p><strong>Why It's Invisible:</strong> Most test scenarios either: (a) close the browser between users, or (b) don't fully logout.</p>
+            <p><strong>Fix Applied:</strong> Added <code>clearStore()</code> function called from <code>clearSession()</code> in <code>src/lib/auth.ts</code></p>
+            <div class="code-block">// NEW: Clear store when user logs out
+export function clearStore() {
+  useStore.setState({
+    transactions: [],
+    statementImports: [],
+    // ... reset all data to defaults
+  });
+  sessionStorage.removeItem("financial-planner-storage-v3");
+}</div>
+        </div>
+
+        <div class="vulnerability fixed">
+            <span class="fix-badge">✓ FIXED</span>
+            <h3>Vulnerability #3: All Users Sharing Same Account ID (ROOT CAUSE)</h3>
+            <p><strong>Problem:</strong> The <code>getCurrentAccount()</code> function returned a hardcoded account with <code>id="toy"</code>. This meant <strong>ALL transactions from ALL users were assigned the same accountId</strong>.</p>
+            <div class="code-block">// BEFORE (VULNERABLE)
+export const MAIN_ACCOUNT = {
+  id: "toy",  // Hardcoded! Every user gets this
+  name: "Toy Theeranan",
+};
+
+export function getCurrentAccount() {
+  return MAIN_ACCOUNT;  // Same for all users!
+}</div>
+            <p>When transactions were filtered in <code>/expenses/actuals</code>:</p>
+            <div class="code-block">const transactions = store.transactions.filter(
+  t => t.accountId === activeAccountId  // activeAccountId always "toy"
+);
+// Result: ALL users see ALL transactions with accountId="toy"!</div>
+            <p><strong>Why It's Invisible:</strong> The code <strong>looks correct</strong>—there IS filtering by accountId. The bug is that the filter value is the same for everyone.</p>
+            <p><strong>Fix Applied:</strong> Changed <code>getCurrentAccount()</code> to return per-user account in <code>src/lib/accounts.ts</code></p>
+            <div class="code-block">// AFTER (SECURE)
+export function getCurrentAccount(): Account {
+  const session = getSession();
+  return {
+    id: session.userId,  // Unique per user!
+    name: session.username,
+    role: session.role,
+    // ...
+  };
+}</div>
+            <p><strong>Why This Works:</strong> Each user has a unique <code>userId</code> from Supabase. Transactions are now scoped to that unique ID.</p>
+        </div>
+
+        <h2>🛡️ Prevention Framework</h2>
+
+        <h3>1. Multi-User Integration Tests (Most Important)</h3>
+        <div class="test-pattern">
+            <p><strong>Test Pattern:</strong> Every feature that touches user data needs a 2+ user test</p>
+            <div class="code-block">describe("Per-user data isolation", () => {
+  test("User A cannot see User B's transactions", async () => {
+    // Step 1: Login as User A
+    const userA = await loginAs("userA@test.com");
+
+    // Step 2: User A imports statement (10 transactions)
+    const stmt = await importStatement(userA, testPdf);
+    expect(stmt.transactionCount).toBe(10);
+
+    // Step 3: CRITICAL - Switch to User B
+    const userB = await loginAs("userB@test.com");
+
+    // Step 4: Verify User B sees ZERO transactions
+    const txns = await fetchTransactions(userB);
+    expect(txns).toHaveLength(0);  // MUST be empty!
+
+    // Step 5: User B imports different statement (8 transactions)
+    const stmtB = await importStatement(userB, testPdf2);
+    expect(stmtB.transactionCount).toBe(8);
+
+    // Step 6: Verify User A still sees ONLY their 10
+    await loginAs("userA@test.com");
+    const txnsA = await fetchTransactions(userA);
+    expect(txnsA).toHaveLength(10);
+  });
+});</div>
+        </div>
+
+        <div class="checklist">
+            <h3>2. Code Review Checklist</h3>
+            <ul>
+                <li><strong>All database queries:</strong> Does SELECT/INSERT/UPDATE filter by <code>userId</code> or <code>accountId</code>? NO WHERE clause = automatic red flag</li>
+                <li><strong>Cache keys:</strong> If storing in localStorage/sessionStorage, is the key scoped to user? Never <code>"app_data"</code>, always <code>"app_data_${userId}"</code></li>
+                <li><strong>Default values:</strong> Is there a fallback that could leak old data? (e.g., hardcoded account ID)</li>
+                <li><strong>Logout handler:</strong> Does it clear <strong>ALL</strong> user state? Store, cache, cookies, etc.</li>
+                <li><strong>API authorization:</strong> Does <code>/api/sync</code> verify the user can only access their own <code>storageKey</code>? Validate on server side</li>
+                <li><strong>Multi-user test:</strong> Does the PR include a test with 2+ users? If not, request it</li>
+            </ul>
+        </div>
+
+        <div class="checklist">
+            <h3>3. Common Blindspots</h3>
+            <ul>
+                <li><strong>Global state that should be per-user:</strong> Hardcoded IDs, single-user defaults, shared accounts</li>
+                <li><strong>Persistent caches without user scope:</strong> localStorage keys that don't include userId</li>
+                <li><strong>Filters that look correct but use wrong value:</strong> Code filters by <code>accountId</code> but <code>accountId</code> is hardcoded to same value for all users</li>
+                <li><strong>Missing logout side effects:</strong> Session cleared but in-memory state not cleared</li>
+                <li><strong>Initialization bugs:</strong> New user inherits previous user's data on page load because store hydrates before user is authenticated</li>
+            </ul>
+        </div>
+
+        <div class="file-list">
+            <h3>4. Critical Files to Always Audit</h3>
+            <div class="file-item">
+                <strong>src/lib/store.ts</strong> — Storage backend (localStorage vs sessionStorage), clearStore() function
+            </div>
+            <div class="file-item">
+                <strong>src/lib/auth.ts</strong> — clearSession() must call clearStore(), getSession() must be accurate
+            </div>
+            <div class="file-item">
+                <strong>src/lib/accounts.ts</strong> — getCurrentAccount() must return per-user account, not hardcoded value
+            </div>
+            <div class="file-item">
+                <strong>src/app/api/sync/route.ts</strong> — Must authenticate user and validate they can only read/write their storageKey
+            </div>
+            <div class="file-item">
+                <strong>src/app/expenses/actuals/page.tsx</strong> — Verify transactions are filtered by activeAccountId, not a constant
+            </div>
+            <div class="file-item">
+                <strong>Any <code>localStorage.setItem()</code> calls</strong> — Convert to sessionStorage or scope key by userId
+            </div>
+        </div>
+
+        <h2>📊 Monitoring & Detection</h2>
+        <div class="warning">
+            <strong>Post-Deployment Alerts:</strong>
+            <ul>
+                <li>User reads/writes to <code>storageKey</code> that doesn't match their session</li>
+                <li>Same transaction ID appears for multiple users</li>
+                <li>Query returns data from different <code>accountId</code> than requested user's</li>
+            </ul>
+        </div>
+
+        <h2>✅ Verification After Deploy</h2>
+        <div class="checklist">
+            <ul>
+                <li>Fresh account created → verify zero statements (not admin's statements)</li>
+                <li>User A imports statement → User B logs in → User B sees zero statements</li>
+                <li>Logout in same tab → Login as different user → verify data cleared</li>
+                <li>Browser DevTools: Check sessionStorage is cleared on logout</li>
+                <li>API test: Attempt to read another user's storageKey → expect 403 Forbidden</li>
+            </ul>
+        </div>
+
+        <h2>🎓 Key Lessons</h2>
+        <div class="success">
+            <p><strong>1. Data isolation issues hide in multi-user scenarios:</strong> Single-user testing misses them completely.</p>
+            <p><strong>2. Hardcoded values are dangerous:</strong> <code>MAIN_ACCOUNT.id = "toy"</code> looked like a constant but was a shared resource.</p>
+            <p><strong>3. Visible code isn't always correct:</strong> The filtering code <em>looked</em> right even though the filter value was wrong.</p>
+            <p><strong>4. Cache + User logout = data leakage:</strong> Stores that aren't cleared explicitly on logout carry data between users.</p>
+            <p><strong>5. Detection requires intentional testing:</strong> This issue only appeared when deliberately testing with two users in the same session.</p>
+        </div>
+
+        <footer>
+            <p>Captured May 10, 2026 • Financial 101 Master v3.3+</p>
+            <p>This guide is part of the permanent codebase documentation. Reference it before shipping any multi-user feature.</p>
+        </footer>
+    </div>
+</body>
+</html>

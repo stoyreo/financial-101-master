@@ -464,73 +464,87 @@ export const useStore = create<Store>()(
         const session = getSession();
         if (!session) return;
 
-        // Try loading from remote first
-        const remoteResult = await loadRemoteUserData(session.storageKey);
-        let data = null;
+        try {
+          // Try loading from remote first
+          const remoteResult = await loadRemoteUserData(session.storageKey);
+          let data = null;
 
-        if (remoteResult.ok && remoteResult.data) {
-          data = remoteResult.data;
-          // Sync remote data back to localStorage
-          persistUserData(session.storageKey, data);
-        } else {
-          // Fall back to localStorage
-          data = loadUserData(session.storageKey);
-        }
-
-        if (!data) {
-          set((state) => {
-            state.localSyncStatus = "idle";
-            state.remoteSyncStatus = "idle";
-          });
-          return;
-        }
-
-        // Defensive merge: when remote returns an EMPTY array for a list
-        // slice but local in-memory state already has items, KEEP local.
-        // This protects against the case where:
-        //   - User imports a statement (state.transactions = 100 items, persist
-        //     middleware saves to localStorage immediately).
-        //   - User closes the tab BEFORE the 800ms AutoSync debounce flushes
-        //     to /api/sync, so remote still has transactions: [].
-        //   - User reopens app → persist hydrates state from localStorage
-        //     (good, has 100 items) → loadUserNamespace fetches remote
-        //     (transactions: []) → naive overwrite would WIPE the 100 items.
-        // Solution: only overwrite a list slice when remote has items, OR
-        // when local is also empty.
-        const preferRemoteList = <T,>(remote: T[] | undefined, local: T[]): T[] | null => {
-          if (!Array.isArray(remote)) return null; // remote didn't include this slice → keep local
-          if (remote.length > 0) return remote;     // remote has data → take it (authoritative)
-          if (local.length === 0) return remote;    // both empty → no-op
-          return null;                              // remote empty, local has data → keep local
-        };
-
-        set((state) => {
-          if (data.profile) state.profile = data.profile;
-          if (data.incomes) state.incomes = data.incomes;
-          if (data.expenses) state.expenses = data.expenses;
-          if (data.debts) state.debts = data.debts;
-          if (data.investments) state.investments = data.investments;
-          if (data.retirement) state.retirement = data.retirement;
-          if (data.tax) state.tax = data.tax;
-          if (data.scenarios) state.scenarios = data.scenarios;
-          if (data.activeScenarioId) state.activeScenarioId = data.activeScenarioId;
-
-          const txns = preferRemoteList(data.transactions, state.transactions);
-          if (txns !== null) state.transactions = txns;
-          const rules = preferRemoteList(data.merchantRules, state.merchantRules);
-          if (rules !== null) state.merchantRules = rules;
-          const imports = preferRemoteList(data.statementImports, state.statementImports);
-          if (imports !== null) state.statementImports = imports;
-          if (Array.isArray(data.customExpenseCategories)) {
-            state.customExpenseCategories = data.customExpenseCategories;
+          if (remoteResult.ok && remoteResult.data) {
+            data = remoteResult.data;
+            // Sync remote data back to localStorage
+            persistUserData(session.storageKey, data);
+          } else {
+            // Fall back to localStorage
+            data = loadUserData(session.storageKey);
           }
 
-          const f = computeForecasts(state as any);
-          state.yearlyForecast = f.yearlyForecast;
-          state.monthlyForecast = f.monthlyForecast;
-          state.localSyncStatus = "idle";
-          state.remoteSyncStatus = "idle";
-        });
+          if (!data) {
+            set((state) => {
+              state.localSyncStatus = "idle";
+              state.remoteSyncStatus = "idle";
+            });
+            return;
+          }
+
+          // Defensive merge: when remote returns an EMPTY array for a list
+          // slice but local in-memory state already has items, KEEP local.
+          // This protects against the case where:
+          //   - User imports a statement (state.transactions = 100 items, persist
+          //     middleware saves to localStorage immediately).
+          //   - User closes the tab BEFORE the 800ms AutoSync debounce flushes
+          //     to /api/sync, so remote still has transactions: [].
+          //   - User reopens app → persist hydrates state from localStorage
+          //     (good, has 100 items) → loadUserNamespace fetches remote
+          //     (transactions: []) → naive overwrite would WIPE the 100 items.
+          // Solution: only overwrite a list slice when remote has items, OR
+          // when local is also empty.
+          const preferRemoteList = <T,>(remote: T[] | undefined, local: T[]): T[] | null => {
+            if (!Array.isArray(remote)) return null; // remote didn't include this slice → keep local
+            if (remote.length > 0) return remote;     // remote has data → take it (authoritative)
+            if (local.length === 0) return remote;    // both empty → no-op
+            return null;                              // remote empty, local has data → keep local
+          };
+
+          set((state) => {
+            try {
+              if (data.profile) state.profile = data.profile;
+              if (data.incomes) state.incomes = data.incomes;
+              if (data.expenses) state.expenses = data.expenses;
+              if (data.debts) state.debts = data.debts;
+              if (data.investments) state.investments = data.investments;
+              if (data.retirement) state.retirement = data.retirement;
+              if (data.tax) state.tax = data.tax;
+              if (data.scenarios) state.scenarios = data.scenarios;
+              if (data.activeScenarioId) state.activeScenarioId = data.activeScenarioId;
+
+              const txns = preferRemoteList(data.transactions, state.transactions);
+              if (txns !== null) state.transactions = txns;
+              const rules = preferRemoteList(data.merchantRules, state.merchantRules);
+              if (rules !== null) state.merchantRules = rules;
+              const imports = preferRemoteList(data.statementImports, state.statementImports);
+              if (imports !== null) state.statementImports = imports;
+              if (Array.isArray(data.customExpenseCategories)) {
+                state.customExpenseCategories = data.customExpenseCategories;
+              }
+
+              const f = computeForecasts(state as any);
+              state.yearlyForecast = f.yearlyForecast;
+              state.monthlyForecast = f.monthlyForecast;
+              state.localSyncStatus = "idle";
+              state.remoteSyncStatus = "idle";
+            } catch (err) {
+              console.error("[Store] Error in loadUserNamespace state update:", err);
+              // Still mark sync as idle to prevent stuck loading state
+              state.localSyncStatus = "idle";
+              state.remoteSyncStatus = "idle";
+              throw err;
+            }
+          });
+        } catch (err) {
+          console.error("[Store] loadUserNamespace failed:", err);
+          // Re-throw so AuthGuard can handle it
+          throw err;
+        }
       },
       saveUserNamespace: () => {
         const session = getSession();
@@ -771,45 +785,6 @@ export const useStore = create<Store>()(
     }
   )
 );
-
-/**
- * 🔐 CRITICAL: Clear the store when user logs out.
- * Prevents the next user from seeing the previous user's cached financial data.
- * Must be called whenever clearSession() is called in auth.ts.
- */
-export function clearStore() {
-  const store = useStore.getState();
-  useStore.setState({
-    profile: seedProfile,
-    incomes: seedIncomes,
-    expenses: seedExpenses,
-    debts: seedDebts,
-    investments: seedInvestments,
-    retirement: seedRetirement,
-    tax: seedTax,
-    scenarios: seedScenarios,
-    activeScenarioId: "base",
-    isSeedLoaded: true,
-    transactions: [],
-    merchantRules: buildDefaultMerchantRules(),
-    statementImports: [],
-    customExpenseCategories: [],
-    yearlyForecast: [],
-    monthlyForecast: [],
-    localSyncStatus: "idle",
-    remoteSyncStatus: "idle",
-    lastLocalSaveTime: null,
-    lastRemoteSaveTime: null,
-    lastSyncError: null,
-  }, true); // replace = true to skip Zustand's immer wrapper
-
-  // Also clear sessionStorage explicitly
-  if (typeof window !== "undefined") {
-    try {
-      sessionStorage.removeItem("financial-planner-storage-v3");
-    } catch { /* noop */ }
-  }
-}
 
 // ── Selectors ─────────────────────────────────────────────
 export const selectActiveScenario = (s: Store) =>
