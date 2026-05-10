@@ -1,7 +1,5 @@
 "use client";
 import { useState } from "react";
-
-export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { useStore, selectTotalMonthlyExpenses } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
@@ -12,6 +10,8 @@ import {
 } from "@/components/ui";
 import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+
+export const dynamic = "force-dynamic";
 
 const DEFAULT_EXPENSE_CATEGORIES = ["Utilities","Food","Transport","Insurance","Housing","Entertainment","Shopping","Travel","Family","Pet","Health","Investment","Medical","Other"];
 const FREQUENCIES: Frequency[] = ["monthly", "yearly", "one-time"];
