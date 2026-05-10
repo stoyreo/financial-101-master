@@ -234,8 +234,30 @@ export default {
     const subject = body.subject || subjectMap[type] || subjectMap.login;
     const html = tmpl(type, body, appUrl);
 
-    const recipients = (env.NOTIFY_TO || "toy.theeranan@icloud.com")
-      .split(",").map(s => s.trim()).filter(Boolean);
+    // 🔐 CRITICAL FIX: Derive recipients from the authenticated user's email (body.email)
+    // and the env.NOTIFY_TO setting. Never hardcode the admin's email as a fallback.
+    let recipients = [];
+
+    // If the request includes a user's email (from authenticated context), add it first
+    if (body.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email)) {
+      recipients.push(body.email);
+    }
+
+    // If env.NOTIFY_TO is set (admin override for system alerts), add those addresses too
+    if (env.NOTIFY_TO) {
+      const adminEmails = env.NOTIFY_TO
+        .split(",").map(s => s.trim()).filter(Boolean);
+      recipients.push(...adminEmails);
+    }
+
+    // De-duplicate recipients
+    recipients = [...new Set(recipients)];
+
+    // If no recipients at all, reject the request
+    if (!recipients.length) {
+      return new Response(JSON.stringify({ ok: false, error: "No valid recipients. Either provide body.email or set NOTIFY_TO secret." }),
+        { status: 400, headers: { ...cors, "Content-Type": "application/json" } });
+    }
 
     const results = [];
     for (const to of recipients) {

@@ -118,7 +118,9 @@ export async function notifyAccess(user: AppUser) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user: user.username, email: user.email,
+        type: "login",
+        user: user.username,
+        email: user.email,  // 🔐 REQUIRED: Include user's email so notification worker knows who to send to
         appUrl: window.location.origin,
         loginTime: new Date().toISOString(),
         userAgent: navigator.userAgent,

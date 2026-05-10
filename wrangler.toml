@@ -2,12 +2,10 @@ name = "financial-101-master"
 compatibility_date = "2024-01-01"
 pages_build_output_dir = "out"
 
-# KV namespace for user data persistence (Task 1 & 2)
-# Run: wrangler kv:namespace create financial-planner-kv-namespace
-# Then add the returned IDs here
-kv_namespaces = [
-  { binding = "FINANCIAL_PLANNER_KV", id = "805d21b76701462b94137b5f20275066", preview_id = "abc87bea1cd3482ead81b7f0e9456c5f" }
-]
+# KV namespace binding removed — app now uses Supabase for data persistence
+# kv_namespaces = [
+#   { binding = "FINANCIAL_PLANNER_KV", id = "805d21b76701462b94137b5f20275066", preview_id = "abc87bea1cd3482ead81b7f0e9456c5f" }
+# ]
 
 # NOTE: Cron triggers are NOT supported in Pages wrangler.toml.
 # The cron schedule for the email-notify Worker lives in cloudflare/email-wrangler.toml.

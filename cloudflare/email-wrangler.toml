@@ -1,5 +1,5 @@
 name = "email-notify"
-account_id = "2283759f519840be93da1379fb8b435d"
+account_id = "db5a4404320982f9d7866822c09a2ba8"
 main = "gmail-worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
