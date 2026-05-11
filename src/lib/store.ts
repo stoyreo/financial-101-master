@@ -23,6 +23,7 @@ import { buildDefaultMerchantRules, newMerchantRule } from "./categorize";
 import { loadUserData, persistUserData, saveRemoteUserData, loadRemoteUserData } from "./users";
 import { getCurrentAccount } from "./accounts";
 import { getSession } from "./auth";
+import { looksLikeDemoData } from "./toyRealData";
 import { generateYearlyForecast, generateMonthlyForecast } from "./engine/forecast";
 
 interface Store {
@@ -479,19 +480,25 @@ export const useStore = create<Store>()(
             data = loadUserData(session.storageKey);
           }
 
-          if (!data) {
-            // 🔐 Admin bootstrap: if fp_data_toy has no data (e.g. fresh Supabase
-            // environment or first login after DB reset), auto-seed real data so
-            // the admin never sees the Somchai demo dashboard.
-            if (session.storageKey === "fp_data_toy") {
+          // 🔐 Admin data recovery: repair missing OR corrupted Somchai data.
+          // Root cause of the corruption loop:
+          //   synthesizeSession resets store → Somchai → AutoSync saves Somchai
+          //   to remote → next login fetches Somchai → loop.
+          // Fix: whenever fp_data_toy is absent OR contains seed/demo data,
+          // replace with toyRealData and immediately push to remote so the next
+          // login is clean. AutoSync will then save the real data, breaking the loop.
+          const isAdmin = session.storageKey === "fp_data_toy";
+          const isCorrupted = !data || (isAdmin && looksLikeDemoData(data));
+
+          if (isCorrupted) {
+            if (isAdmin) {
               try {
                 const { toyRealData } = await import("./toyRealData");
                 data = toyRealData;
-                // Persist locally and push to remote so future logins work without this fallback
                 persistUserData(session.storageKey, data);
+                // Push immediately — fixes remote corruption so next login is clean
                 saveRemoteUserData(session.storageKey, data).catch(() => {/* non-fatal */});
               } catch {
-                // If toyRealData import fails, fall through to idle state
                 set((state) => {
                   state.localSyncStatus = "idle";
                   state.remoteSyncStatus = "idle";
@@ -499,6 +506,7 @@ export const useStore = create<Store>()(
                 return;
               }
             } else {
+              // Non-admin with no data: nothing to load
               set((state) => {
                 state.localSyncStatus = "idle";
                 state.remoteSyncStatus = "idle";
