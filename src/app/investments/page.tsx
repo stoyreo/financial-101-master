@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useStore, selectTotalInvestmentValue } from "@/lib/store";
-import { thb, pct } from "@/lib/utils";
+import { thb, pct, calcAge } from "@/lib/utils";
 import type { InvestmentAccount, AccountType } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { Plus, Edit, Trash2, PiggyBank, TrendingUp } from "lucide-react";
+import { ScenarioSimulator } from "./_components/ScenarioSimulator";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -81,7 +82,7 @@ function InvestmentForm({ item, onChange }: { item: Omit<InvestmentAccount, "id"
 }
 
 export default function InvestmentsPage() {
-  const { investments, retirement, addInvestment, updateInvestment, deleteInvestment } = useStore();
+  const { investments, retirement, profile, addInvestment, updateInvestment, deleteInvestment } = useStore();
   const store = useStore();
   const [modalOpen, setModalOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -258,8 +259,21 @@ export default function InvestmentsPage() {
         </CardContent>
       </Card>
 
+      {/* ── What-If Simulator ─────────────────────────────────────────────── */}
+      <ScenarioSimulator
+        investments={investments}
+        retirementTarget={retirement.expectedAnnualExpense / retirement.safeWithdrawalRate}
+        userAge={calcAge(profile.dateOfBirth)}
+        retirementYear={
+          profile.dateOfBirth
+            ? new Date(profile.dateOfBirth).getFullYear() + retirement.retirementAge
+            : undefined
+        }
+        riskProfile={profile.riskProfile}
+      />
+
       {/* Account table */}
-      <Card>
+      <Card className="mt-6">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
