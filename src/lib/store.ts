@@ -114,6 +114,7 @@ interface Store {
   setRemoteSyncStatus: (status: "idle" | "saving" | "completed" | "error", error?: string) => void;
 
   // ── Utility ───────────────────────────────────────────
+  reloadScenariosFromSeed: () => void;       // Reload only scenarios without losing other data
   loadSeedData: () => void;
   loadUserNamespace: () => void;
   saveUserNamespace: () => void;
@@ -612,6 +613,15 @@ export const useStore = create<Store>()(
           });
         }, 4000);
       },
+      // ── Load only scenarios from seed (preserves all other user data) ──
+      reloadScenariosFromSeed: () => set((state) => {
+        state.scenarios = seedScenarios;
+        state.activeScenarioId = "base";
+        const f = computeForecasts(state as any);
+        state.yearlyForecast = f.yearlyForecast;
+        state.monthlyForecast = f.monthlyForecast;
+      }),
+
       loadSeedData: () => set((state) => {
         state.profile = seedProfile;
         state.incomes = seedIncomes;

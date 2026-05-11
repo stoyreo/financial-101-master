@@ -56,7 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [importStatus, setImportStatus] = useState<ImportStatus>({ show: false, phase: "parsing" });
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
-  const { profile, recomputeForecast, exportData, exportDataXlsx, importDataXlsx, loadSeedData, saveUserNamespace, saveUserNamespaceAsync } = useStore();
+  const { profile, recomputeForecast, exportData, exportDataXlsx, importDataXlsx, loadSeedData, reloadScenariosFromSeed, saveUserNamespace, saveUserNamespaceAsync } = useStore();
   const router = useRouter();
   const handleLogout = () => { clearSession(); router.replace("/login"); };
   const age = calcAge(profile.dateOfBirth);
@@ -237,8 +237,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <button onClick={handleExport} className="flex-1 flex items-center gap-1 px-2 py-1.5 text-[11px] rounded-md hover:bg-accent transition-colors"><Download size={12} /> Export</button>
                 <button onClick={handleImport} className="flex-1 flex items-center gap-1 px-2 py-1.5 text-[11px] rounded-md hover:bg-accent transition-colors"><Upload size={12} /> Import</button>
               </div>
+              <button onClick={reloadScenariosFromSeed} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md hover:bg-accent transition-colors text-muted-foreground">
+                <RefreshCw size={12} /> Reload Scenarios
+              </button>
               <button onClick={loadSeedData} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md hover:bg-accent transition-colors text-muted-foreground">
-                <RefreshCw size={12} /> Reset Demo Data
+                <RefreshCw size={12} /> Reset All Data
               </button>
               <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md hover:bg-accent transition-colors">
@@ -341,8 +344,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <button onClick={handleExport} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-xl border border-border hover:bg-accent transition-colors"><Download size={14} /> Export</button>
                 <button onClick={handleImport} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-xl border border-border hover:bg-accent transition-colors"><Upload size={14} /> Import</button>
               </div>
+              <button onClick={reloadScenariosFromSeed} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-xl border border-border hover:bg-accent transition-colors text-muted-foreground">
+                <RefreshCw size={14} /> Reload Scenarios
+              </button>
               <button onClick={loadSeedData} className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs rounded-xl border border-border hover:bg-accent transition-colors text-muted-foreground">
-                <RefreshCw size={14} /> Reset to Demo Data
+                <RefreshCw size={14} /> Reset All Data
               </button>
               {/* BackupWidget removed from mobile drawer per user request (2026-04-18) */}
               <button onClick={handleLogout} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] rounded-md hover:bg-destructive/10 text-destructive transition-colors"><LogOut size={12} /> Sign Out</button>
