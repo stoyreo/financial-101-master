@@ -480,11 +480,31 @@ export const useStore = create<Store>()(
           }
 
           if (!data) {
-            set((state) => {
-              state.localSyncStatus = "idle";
-              state.remoteSyncStatus = "idle";
-            });
-            return;
+            // 🔐 Admin bootstrap: if fp_data_toy has no data (e.g. fresh Supabase
+            // environment or first login after DB reset), auto-seed real data so
+            // the admin never sees the Somchai demo dashboard.
+            if (session.storageKey === "fp_data_toy") {
+              try {
+                const { toyRealData } = await import("./toyRealData");
+                data = toyRealData;
+                // Persist locally and push to remote so future logins work without this fallback
+                persistUserData(session.storageKey, data);
+                saveRemoteUserData(session.storageKey, data).catch(() => {/* non-fatal */});
+              } catch {
+                // If toyRealData import fails, fall through to idle state
+                set((state) => {
+                  state.localSyncStatus = "idle";
+                  state.remoteSyncStatus = "idle";
+                });
+                return;
+              }
+            } else {
+              set((state) => {
+                state.localSyncStatus = "idle";
+                state.remoteSyncStatus = "idle";
+              });
+              return;
+            }
           }
 
           // Defensive merge: when remote returns an EMPTY array for a list

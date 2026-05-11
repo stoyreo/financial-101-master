@@ -64,15 +64,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // with the 800ms AutoSync debounce and wipes freshly-imported data.
     if (__loadedStorageKey !== session.storageKey) {
       __loadedStorageKey = session.storageKey;
-      try {
-        // Don't await - let it load in background, but catch errors
-        loadUserNamespace().catch(err => {
+      // Await namespace load so the dashboard never renders with stale seed data
+      (async () => {
+        try {
+          await loadUserNamespace();
+        } catch (err) {
           console.error("[AuthGuard] Failed to load user namespace:", err);
-          // Store will fall back to localStorage
-        });
-      } catch (err) {
-        console.error("[AuthGuard] loadUserNamespace failed:", err);
-      }
+          // Store will fall back to localStorage/seed — still show the page
+        }
+        setAuthed(true);
+        didCheckRef.current = true;
+      })();
+      return; // don't fall through to setAuthed below
     }
     setAuthed(true);
     didCheckRef.current = true;
