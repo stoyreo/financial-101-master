@@ -97,7 +97,7 @@ export function synthesizeSession(appUser: AppUser): Session {
           customExpenseCategories: [],
           yearlyForecast: [],
           monthlyForecast: [],
-        }, true); // replace = true → full state reset
+        }); // merge only — do NOT pass replace=true, that wipes all store action functions
         sessionStorage.removeItem("financial-planner-storage-v3");
       } catch { /* non-fatal */ }
     })();
@@ -129,7 +129,8 @@ export async function clearSession() {
   try {
     const { useStore } = await import("./store");
     // Reset store to seed state without calling clearStore (avoids circular import)
-    const { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios, buildDefaultMerchantRules } = await import("./seed");
+    const { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios } = await import("./seed");
+    const { buildDefaultMerchantRules } = await import("./categorize");
     useStore.setState({
       profile: seedProfile,
       incomes: seedIncomes,
@@ -147,7 +148,7 @@ export async function clearSession() {
       customExpenseCategories: [],
       yearlyForecast: [],
       monthlyForecast: [],
-    }, true);
+    }); // merge only — do NOT pass replace=true
     sessionStorage.removeItem("financial-planner-storage-v3");
   } catch { /* non-fatal */ }
 
