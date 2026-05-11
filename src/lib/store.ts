@@ -487,7 +487,10 @@ export const useStore = create<Store>()(
           // Fix: whenever fp_data_toy is absent OR contains seed/demo data,
           // replace with toyRealData and immediately push to remote so the next
           // login is clean. AutoSync will then save the real data, breaking the loop.
-          const isAdmin = session.storageKey === "fp_data_toy";
+          // Use role, not storageKey — the storageKey may be a UUID-based key
+          // rather than the canonical "fp_data_toy" depending on how the user
+          // was provisioned in the app_users table.
+          const isAdmin = session.role === "admin";
           const isCorrupted = !data || (isAdmin && looksLikeDemoData(data));
 
           if (isCorrupted) {
