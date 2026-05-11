@@ -269,12 +269,99 @@ export function Modal({ open, onClose, title, children, className }: {
   );
 }
 
+// ── Info Tooltip ──────────────────────────────────────────
+export function InfoTooltip({ content, side = "top" }: {
+  content: React.ReactNode;
+  side?: "top" | "bottom" | "right";
+}) {
+  return (
+    <span className="relative group/infotip inline-flex items-center shrink-0 ml-1">
+      <span className="flex items-center justify-center w-3.5 h-3.5 rounded-full border border-muted-foreground/40 text-muted-foreground/60 hover:border-primary/70 hover:text-primary cursor-help transition-colors text-[9px] font-bold leading-none select-none">
+        i
+      </span>
+      <span className={cn(
+        "absolute z-[60] w-72 max-w-xs p-3 text-xs leading-relaxed rounded-lg border shadow-2xl",
+        "bg-popover text-popover-foreground whitespace-pre-line",
+        "opacity-0 group-hover/infotip:opacity-100 pointer-events-none transition-opacity duration-150",
+        side === "top" && "bottom-full left-1/2 -translate-x-1/2 mb-2",
+        side === "bottom" && "top-full left-1/2 -translate-x-1/2 mt-2",
+        side === "right" && "left-full top-1/2 -translate-y-1/2 ml-2",
+      )}>
+        {content}
+        {side === "top" && (
+          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-border" />
+        )}
+        {side === "bottom" && (
+          <span className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-border" />
+        )}
+      </span>
+    </span>
+  );
+}
+
+// ── AI Token Meter ─────────────────────────────────────────
+const SESSION_TOKEN_BUDGET = 100_000;
+const TOKEN_STORAGE_KEY = "ai_token_usage_v1";
+
+export function recordTokenUsage(tokens: number) {
+  if (typeof window === "undefined") return;
+  const current = parseInt(sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? "0", 10);
+  sessionStorage.setItem(TOKEN_STORAGE_KEY, String(current + tokens));
+}
+
+export function AITokenMeter({ estimatedTokens, label }: {
+  estimatedTokens: number;
+  label?: string;
+}) {
+  const [used, setUsed] = React.useState(0);
+
+  React.useEffect(() => {
+    const read = () => setUsed(parseInt(sessionStorage.getItem(TOKEN_STORAGE_KEY) ?? "0", 10));
+    read();
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
+  }, []);
+
+  const remaining = Math.max(0, SESSION_TOKEN_BUDGET - used);
+  const pctUsed = Math.min(100, (used / SESSION_TOKEN_BUDGET) * 100);
+  const canAfford = remaining >= estimatedTokens;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium border",
+        canAfford
+          ? "bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800"
+          : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800"
+      )}>
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+        </svg>
+        ~{estimatedTokens.toLocaleString()} tokens
+        {label && <span className="opacity-70">· {label}</span>}
+      </span>
+      <span className="flex items-center gap-1">
+        <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
+          <div
+            className={cn("h-full rounded-full transition-all", pctUsed > 80 ? "bg-red-500" : pctUsed > 50 ? "bg-amber-400" : "bg-violet-500")}
+            style={{ width: `${pctUsed}%` }}
+          />
+        </div>
+        <span className={cn("font-medium tabular-nums", !canAfford && "text-red-600")}>
+          {(remaining / 1000).toFixed(0)}K left
+        </span>
+      </span>
+    </div>
+  );
+}
+
 // ── Stat Card ─────────────────────────────────────────────
-export function StatCard({ title, value, subtitle, icon: Icon, trend, trendLabel, color = "blue", className }: {
+export function StatCard({ title, value, subtitle, icon: Icon, trend, trendLabel, color = "blue", className, tooltip }: {
   title: string; value: string; subtitle?: string;
   icon?: React.ComponentType<any>;
   trend?: "up" | "down" | "neutral"; trendLabel?: string;
   color?: "blue" | "green" | "red" | "amber" | "purple"; className?: string;
+  tooltip?: string;
 }) {
   const colors = {
     blue: "text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400",
@@ -292,7 +379,10 @@ export function StatCard({ title, value, subtitle, icon: Icon, trend, trendLabel
     <Card className={cn("p-5 hover:shadow-md transition-shadow", className)}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide truncate">{title}</p>
+          <div className="flex items-center gap-0.5">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide truncate">{title}</p>
+            {tooltip && <InfoTooltip content={tooltip} />}
+          </div>
           <p className="text-2xl font-bold tabular-nums mt-1 leading-tight">{value}</p>
           {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
           {trendLabel && (

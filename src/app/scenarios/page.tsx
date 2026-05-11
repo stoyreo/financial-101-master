@@ -19,7 +19,8 @@ import { thb, pct } from "@/lib/utils";
 import type { Scenario, ScenarioAssumptions } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  Select, Modal, Badge, StatCard, PageHeader, Alert, Separator, Tabs, TabsList, TabsTrigger, TabsContent
+  Select, Modal, Badge, StatCard, PageHeader, Alert, Separator, Tabs, TabsList, TabsTrigger, TabsContent,
+  InfoTooltip, AITokenMeter
 } from "@/components/ui";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
@@ -75,7 +76,10 @@ function SensitivityGauge({ name, base, low, high, unit }: {
       <CardContent className="p-4">
         <div className="flex justify-between text-xs mb-2">
           <span className="font-medium">{name}</span>
-          <span className="text-muted-foreground">±20% sensitivity</span>
+          <div className="flex items-center gap-1">
+            <span className="text-muted-foreground">±20% sensitivity</span>
+            <InfoTooltip content={"Red = outcome if assumption drops 20%.\nGreen = outcome if assumption rises 20%.\nCenter line = your current base case."} side="right" />
+          </div>
         </div>
         <div className="relative h-3 mt-3 rounded-full bg-muted overflow-hidden">
           <div className="absolute top-0 bottom-0 bg-red-500/60" style={{ left: 0, width: `${pct(low)}%` }} />
@@ -454,10 +458,13 @@ export default function ScenariosPage() {
             <Card>
               <CardContent className="p-8">
                 <div className="text-center text-muted-foreground">Analyzing financial situation...</div>
+                <div className="mt-4"><AITokenMeter estimatedTokens={3000} label="5 AI modules" /></div>
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-6">
+              <AITokenMeter estimatedTokens={3000} label="5 AI modules" />
+
               {/* Alstom STI Payout Probability card */}
               {alstomSTI && <AlstomSTICard data={alstomSTI} />}
 

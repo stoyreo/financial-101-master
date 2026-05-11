@@ -6,7 +6,7 @@ import { computeTax, compareTaxVsDebt } from "@/lib/engine/tax";
 import type { TaxAssumptions } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  StatCard, PageHeader, Alert, Progress, Separator, Badge
+  StatCard, PageHeader, Alert, Progress, Separator, Badge, InfoTooltip
 } from "@/components/ui";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Calculator, Save, TrendingDown, CheckCircle } from "lucide-react";
@@ -60,10 +60,35 @@ export default function TaxPage() {
 
       {/* Tax summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Gross Income" value={thb(result.grossIncome)} icon={Calculator} color="blue" />
-        <StatCard title="Total Deductions" value={thb(result.totalDeductions)} icon={TrendingDown} color="green" />
-        <StatCard title="Taxable Income" value={thb(result.taxableIncome)} icon={Calculator} color="amber" />
-        <StatCard title="Estimated Tax" value={thb(result.estimatedTax)} subtitle={`Effective rate: ${pct(result.effectiveTaxRate)}`} icon={Calculator} color="red" />
+        <StatCard
+          title="Gross Income"
+          value={thb(result.grossIncome)}
+          icon={Calculator}
+          color="blue"
+          tooltip="= Annual employment income + bonus + other taxable sources entered in Income menu."
+        />
+        <StatCard
+          title="Total Deductions"
+          value={thb(result.totalDeductions)}
+          icon={TrendingDown}
+          color="green"
+          tooltip="Employment deduction (50%, max ฿100K) + personal allowance (฿60K) + RMF + SSF + PVD + insurance premiums + mortgage interest + dependant allowances."
+        />
+        <StatCard
+          title="Taxable Income"
+          value={thb(result.taxableIncome)}
+          icon={Calculator}
+          color="amber"
+          tooltip="= Gross Income − Total Deductions\nProgressive bracket rates apply to this figure."
+        />
+        <StatCard
+          title="Estimated Tax"
+          value={thb(result.estimatedTax)}
+          subtitle={`Effective rate: ${pct(result.effectiveTaxRate)}`}
+          icon={Calculator}
+          color="red"
+          tooltip="Thai PIT progressive brackets:\n0–150K: 0%\n150–300K: 5%\n300–500K: 10%\n500–750K: 15%\n750K–1M: 20%\n1–2M: 25%\n2–5M: 30%\n\nEffective Rate = Total Tax ÷ Gross Income"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

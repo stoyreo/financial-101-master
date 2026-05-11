@@ -5,7 +5,8 @@ import { thb, pct, calcAge } from "@/lib/utils";
 import type { InvestmentAccount, AccountType } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress
+  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
+  InfoTooltip
 } from "@/components/ui";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { Plus, Edit, Trash2, PiggyBank, TrendingUp } from "lucide-react";
@@ -135,10 +136,35 @@ export default function InvestmentsPage() {
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Total Portfolio" value={thb(totalValue)} icon={PiggyBank} color="blue" />
-        <StatCard title="Tax-Advantaged" value={thb(taxAdvantaged)} subtitle={pct(taxAdvantaged / (totalValue || 1))} icon={PiggyBank} color="green" />
-        <StatCard title="Monthly Contributions" value={thb(monthlyContribs)} icon={TrendingUp} color="amber" />
-        <StatCard title="Weighted Return" value={pct(weightedReturn)} icon={TrendingUp} color="purple" />
+        <StatCard
+          title="Total Portfolio"
+          value={thb(totalValue)}
+          icon={PiggyBank}
+          color="blue"
+          tooltip="Σ marketValue for all active accounts."
+        />
+        <StatCard
+          title="Tax-Advantaged"
+          value={thb(taxAdvantaged)}
+          subtitle={pct(taxAdvantaged / (totalValue || 1))}
+          icon={PiggyBank}
+          color="green"
+          tooltip="PVD (≤15% income), RMF (≤30% income, max ฿500K), SSF (≤30% income, max ฿200K).\nContributions reduce taxable income."
+        />
+        <StatCard
+          title="Monthly Contributions"
+          value={thb(monthlyContribs)}
+          icon={TrendingUp}
+          color="amber"
+          tooltip="Σ (monthlyContribution + annualContribution ÷ 12) across all active accounts."
+        />
+        <StatCard
+          title="Weighted Return"
+          value={pct(weightedReturn)}
+          icon={TrendingUp}
+          color="purple"
+          tooltip="= Σ(account return × account value) ÷ Σ(account value)\nLarger accounts pull the weighted average toward their rate."
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

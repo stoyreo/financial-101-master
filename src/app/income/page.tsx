@@ -5,7 +5,8 @@ import { thb, toMonthly, pct } from "@/lib/utils";
 import type { IncomeItem, IncomeCategory, Frequency } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Alert
+  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Alert,
+  InfoTooltip, AITokenMeter, recordTokenUsage
 } from "@/components/ui";
 import { Plus, Edit, Trash2, TrendingUp, DollarSign, Briefcase, PiggyBank, FileUp } from "lucide-react";
 
@@ -144,6 +145,7 @@ export default function IncomePage() {
         return;
       }
       const x = await res.json();
+      recordTokenUsage(2500);
       if (!x.netAmount) {
         alert("Could not read net pay. Please add manually.");
         return;
@@ -183,36 +185,59 @@ export default function IncomePage() {
         title="Income"
         subtitle="Manage all income sources with growth projections"
         actions={
-          <div className="flex gap-2">
-            <label className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-border
-                             bg-card hover:bg-muted text-sm cursor-pointer ${ocrBusy ? "opacity-50 pointer-events-none" : ""}`}>
-              <FileUp size={14} />
-              {ocrBusy ? "Reading…" : "Import payslip"}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="hidden"
-                onChange={e => { const f = e.target.files?.[0]; if (f) handlePayslipImport(f); e.target.value=""; }}
-              />
-            </label>
-            <Button size="sm" onClick={openAdd}>
-              <Plus size={14} /> Add Income
-            </Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <label className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-border
+                               bg-card hover:bg-muted text-sm cursor-pointer ${ocrBusy ? "opacity-50 pointer-events-none" : ""}`}>
+                <FileUp size={14} />
+                {ocrBusy ? "Reading…" : "Import payslip"}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={e => { const f = e.target.files?.[0]; if (f) handlePayslipImport(f); e.target.value=""; }}
+                />
+              </label>
+              <Button size="sm" onClick={openAdd}>
+                <Plus size={14} /> Add Income
+              </Button>
+            </div>
+            <AITokenMeter estimatedTokens={2000} label="payslip OCR" />
           </div>
         }
       />
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Total Monthly Income" value={thb(totalMonthly)} icon={TrendingUp} color="green" />
-        <StatCard title="Total Annual Income" value={thb(totalYearly)} icon={DollarSign} color="blue" />
-        <StatCard title="Active Sources" value={incomes.filter(i => i.isActive).length.toString()} icon={Briefcase} color="purple" />
+        <StatCard
+          title="Total Monthly Income"
+          value={thb(totalMonthly)}
+          icon={TrendingUp}
+          color="green"
+          tooltip="Σ all active income items converted to monthly.\nYearly items ÷ 12. One-time items excluded."
+        />
+        <StatCard
+          title="Total Annual Income"
+          value={thb(totalYearly)}
+          icon={DollarSign}
+          color="blue"
+          tooltip="= Total Monthly Income × 12"
+        />
+        <StatCard
+          title="Active Sources"
+          value={incomes.filter(i => i.isActive).length.toString()}
+          icon={Briefcase}
+          color="purple"
+          tooltip="Count of income items where isActive = true."
+        />
         <StatCard
           title="Taxable Portion"
           value={pct(incomes.filter(i => i.isActive && i.isTaxable)
             .reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0) / (totalMonthly || 1))}
-          icon={PiggyBank} color="amber"
+          icon={PiggyBank}
+          color="amber"
+          tooltip="= Σ(taxable items monthly) ÷ Total Monthly Income\n\nisTaxable=false: net payslip imports, tax-exempt dividends."
         />
       </div>
 

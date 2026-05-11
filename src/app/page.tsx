@@ -4,7 +4,7 @@ import { useStore, selectMortgage, selectTotalMonthlyIncome, selectTotalMonthlyE
   selectTotalDebtBalance, selectTotalMonthlyDebtPayments, selectTotalInvestmentValue, selectNetWorth } from "@/lib/store";
 import { thb, pct, calcAge, safeDivide } from "@/lib/utils";
 import { summariseMortgage } from "@/lib/engine/mortgage";
-import { StatCard, Card, CardHeader, CardTitle, CardContent, Badge, Progress, Alert, PageHeader } from "@/components/ui";
+import { StatCard, Card, CardHeader, CardTitle, CardContent, Badge, Progress, Alert, PageHeader, InfoTooltip } from "@/components/ui";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line, ReferenceLine,
@@ -135,6 +135,7 @@ export default function DashboardPage() {
           color={monthlyNet >= 0 ? "green" : "red"}
           trendLabel={monthlyNet >= 0 ? "Positive cash flow" : "Review spending"}
           trend={monthlyNet >= 0 ? "up" : "down"}
+          tooltip="= Monthly Income − Monthly Expenses − Monthly Debt Payments\n\nGreen ≥฿0 = surplus. Red <฿0 = overspending alert."
         />
         <StatCard
           title="Net Worth"
@@ -143,6 +144,7 @@ export default function DashboardPage() {
           icon={Wallet}
           color="blue"
           trendLabel={`${pct(safeDivide(netWorth - totalDebt, Math.abs(netWorth) + 1))} equity ratio`}
+          tooltip="= (Investments + Cash Balance) − Total Debt\n\nEquity Ratio = (Net Worth − Debt) ÷ |Net Worth|"
         />
         <StatCard
           title="Total Debt"
@@ -152,6 +154,7 @@ export default function DashboardPage() {
           color={dti > 0.4 ? "red" : dti > 0.25 ? "amber" : "green"}
           trendLabel={dsr > 0.35 ? "⚠ High debt service" : "Manageable"}
           trend={dsr > 0.35 ? "down" : "neutral"}
+          tooltip="DTI = Total Debt ÷ (Monthly Income × 12)\nDSR = Monthly Payments ÷ Monthly Income\n\nSafe: DTI <25%, DSR <35%"
         />
         <StatCard
           title="Total Investments"
@@ -161,6 +164,7 @@ export default function DashboardPage() {
           color="purple"
           trendLabel={`+${pct(store.investments[0]?.expectedAnnualReturn ?? 0.07)} avg return`}
           trend="up"
+          tooltip="Sum of all active account market values.\nWeighted Return = Σ(rate × value) ÷ total value"
         />
       </div>
 
@@ -174,6 +178,7 @@ export default function DashboardPage() {
           color="amber"
           trendLabel={mortgageSummary ? `${thb(mortgageSummary.interestSaved)} interest saved` : undefined}
           trend="up"
+          tooltip="Payoff date from month-by-month amortisation until balance = ฿0.\nInterest Saved = total interest without extra payments − total interest with extra payments."
         />
         <StatCard
           title="Monthly Debt Service"
@@ -183,6 +188,7 @@ export default function DashboardPage() {
           color={dsr > 0.35 ? "red" : "blue"}
           trendLabel={dsr < 0.35 ? "Within safe range" : "Above 35% threshold"}
           trend={dsr > 0.35 ? "down" : "up"}
+          tooltip="DSR = Σ monthly payments ÷ monthly income.\n<35%: Thai bank safe zone.\n>40%: loan rejection risk."
         />
         <StatCard
           title="Emergency Fund"
@@ -192,6 +198,7 @@ export default function DashboardPage() {
           color={emergencyProgress >= 100 ? "green" : emergencyProgress >= 50 ? "amber" : "red"}
           trendLabel={emergencyProgress >= 100 ? "Target achieved!" : `${profile.emergencyFundTargetMonths} months target`}
           trend={emergencyProgress >= 100 ? "up" : "neutral"}
+          tooltip="Progress = Cash Balance ÷ (Target Months × Monthly Expenses)\nTarget months configured in your Profile."
         />
         <StatCard
           title="Retirement Readiness"
@@ -201,6 +208,7 @@ export default function DashboardPage() {
           color={retirementProgress >= 80 ? "green" : retirementProgress >= 50 ? "amber" : "red"}
           trendLabel={`Current: ${thb(totalInvestments)}`}
           trend={retirementProgress >= 50 ? "up" : "down"}
+          tooltip="Nest Egg Needed = Annual Retirement Expense ÷ Safe Withdrawal Rate (default 4%)\nReadiness % = Investments ÷ Nest Egg × 100"
         />
       </div>
 
@@ -208,7 +216,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly Cash Flow – 24 Month View</CardTitle>
+            <CardTitle className="text-base">
+              Monthly Cash Flow – 24 Month View
+              <InfoTooltip content="Blue area = income, red area = outflows (expenses + debt), green line = net leftover each month. Below ฿0 dashed line = deficit." />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
@@ -228,7 +239,10 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Debt Payoff Timeline</CardTitle>
+            <CardTitle className="text-base">
+              Debt Payoff Timeline
+              <InfoTooltip content="Amber = mortgage balance, red = other debts. Both areas decline to ฿0 as you pay off loans." />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
@@ -249,7 +263,10 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Net Worth Projection (20 Years)</CardTitle>
+            <CardTitle className="text-base">
+              Net Worth Projection (20 Years)
+              <InfoTooltip content="Blue bars = investments (compound growth), red bars = debt (negative), green line = net worth = investments − debt." />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
@@ -269,7 +286,10 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly Expense Mix</CardTitle>
+            <CardTitle className="text-base">
+              Monthly Expense Mix
+              <InfoTooltip content="Each slice = category ÷ total monthly expenses. Yearly items are divided by 12 for monthly equivalent." />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>

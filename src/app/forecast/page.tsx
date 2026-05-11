@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { thb, pct, calcAge } from "@/lib/utils";
-import { Card, CardHeader, CardTitle, CardContent, StatCard, PageHeader, Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui";
+import { Card, CardHeader, CardTitle, CardContent, StatCard, PageHeader, Tabs, TabsList, TabsTrigger, TabsContent, InfoTooltip } from "@/components/ui";
 import {
   LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine, BarChart, Bar,
@@ -137,7 +137,12 @@ export default function ForecastPage() {
         <TabsContent value="yearly">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Income vs Expenses vs Debt Service (฿K)</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-sm">
+                  Income vs Expenses vs Debt Service (฿K)
+                  <InfoTooltip content="35-year projection. Income grows annually, expenses inflate, investments compound. Net Worth = investments − all debt at year end." />
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={280}>
                   <AreaChart data={yearlyChartData}>
@@ -156,7 +161,12 @@ export default function ForecastPage() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="text-sm">Net Worth & Investment Growth (฿K)</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-sm">
+                  Net Worth & Investment Growth (฿K)
+                  <InfoTooltip content="Blue bars = investments (compound growth), red bars = debt (negative), green line = net worth = investments − debt." />
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={yearlyChartData}>
@@ -180,7 +190,12 @@ export default function ForecastPage() {
         <TabsContent value="monthly">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-              <CardHeader><CardTitle className="text-sm">Monthly Cash Flow (5 Year View)</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-sm">
+                  Monthly Cash Flow (5 Year View)
+                  <InfoTooltip content="Month-by-month cash flow. Net Flow = Income − Expenses − Debt Payments. Negative months shown as alerts." />
+                </CardTitle>
+              </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={monthlyChartData}>
@@ -215,7 +230,12 @@ export default function ForecastPage() {
 
         <TabsContent value="dti">
           <Card>
-            <CardHeader><CardTitle className="text-sm">Debt-to-Income & Debt Service Ratios Over Time</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-sm">
+                Debt-to-Income & Debt Service Ratios Over Time
+                <InfoTooltip content="DTI = total debt ÷ annual income. DSR = monthly payments ÷ monthly income. Both should trend downward as debts clear and income grows." />
+              </CardTitle>
+            </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={300}>
                 <LineChart data={dtiData}>

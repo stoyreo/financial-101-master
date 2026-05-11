@@ -6,7 +6,8 @@ import { thb, toMonthly, pct } from "@/lib/utils";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress
+  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
+  InfoTooltip, AITokenMeter
 } from "@/components/ui";
 import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
@@ -216,27 +217,56 @@ export default function ExpensesPage() {
         title="Expenses"
         subtitle="Plan your monthly, yearly, and one-time budget with inflation"
         actions={
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setCatManagerOpen(true)}>
-              <Tag size={14} /> Categories
-            </Button>
-            <Link href="/expenses/savings">
-              <Button variant="outline" size="sm"><Sparkles size={14} /> Savings Optimizer</Button>
-            </Link>
-            <Link href="/expenses/actuals">
-              <Button variant="outline" size="sm"><Upload size={14} /> Import Statement / Actuals</Button>
-            </Link>
-            <Button size="sm" onClick={openAdd}><Plus size={14} /> Add Expense</Button>
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setCatManagerOpen(true)}>
+                <Tag size={14} /> Categories
+              </Button>
+              <Link href="/expenses/savings">
+                <Button variant="outline" size="sm"><Sparkles size={14} /> Savings Optimizer</Button>
+              </Link>
+              <Link href="/expenses/actuals">
+                <Button variant="outline" size="sm"><Upload size={14} /> Import Statement / Actuals</Button>
+              </Link>
+              <Button size="sm" onClick={openAdd}><Plus size={14} /> Add Expense</Button>
+            </div>
+            <AITokenMeter estimatedTokens={1500} label="expense analysis" />
           </div>
         }
       />
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Total Monthly Budget" value={thb(totalMonthly)} icon={ShoppingCart} color="red" />
-        <StatCard title="Annual Budget"        value={thb(totalMonthly * 12)} icon={ShoppingCart} color="amber" />
-        <StatCard title="Essential Budget"     value={thb(essentialMonthly)} subtitle={pct(essentialMonthly / (totalMonthly || 1))} icon={ShoppingCart} color="blue" />
-        <StatCard title="Discretionary Budget" value={thb(discretionaryMonthly)} subtitle={pct(discretionaryMonthly / (totalMonthly || 1))} icon={ShoppingCart} color="purple" />
+        <StatCard
+          title="Total Monthly Budget"
+          value={thb(totalMonthly)}
+          icon={ShoppingCart}
+          color="red"
+          tooltip="Σ active expense items converted to monthly.\nYearly items ÷ 12."
+        />
+        <StatCard
+          title="Annual Budget"
+          value={thb(totalMonthly * 12)}
+          icon={ShoppingCart}
+          color="amber"
+          tooltip="= Monthly Total × 12"
+        />
+        <StatCard
+          title="Essential Budget"
+          value={thb(essentialMonthly)}
+          subtitle={pct(essentialMonthly / (totalMonthly || 1))}
+          icon={ShoppingCart}
+          color="blue"
+          tooltip="Count of expense items where isActive = true."
+        />
+        <StatCard
+          title="Discretionary Budget"
+          value={thb(discretionaryMonthly)}
+          subtitle={pct(discretionaryMonthly / (totalMonthly || 1))}
+          icon={ShoppingCart}
+          color="purple"
+          tooltip="Count of expense items where isActive = true."
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

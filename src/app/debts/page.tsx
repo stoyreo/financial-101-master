@@ -7,7 +7,8 @@ import { calculatePayoffYear, formatPayoffDisplay, computePayoffMonths, computeP
 import type { DebtAccount, DebtType, Profile } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
-  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress, Alert, Tabs, TabsList, TabsTrigger, TabsContent
+  Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress, Alert, Tabs, TabsList, TabsTrigger, TabsContent,
+  InfoTooltip
 } from "@/components/ui";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -402,14 +403,27 @@ export default function DebtsPage() {
 
       {/* KPI Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Total Debt" value={thb(totalDebt)} icon={CreditCard} color="red" />
-        <StatCard title="Monthly Payments" value={thb(monthlyPayments)} icon={TrendingDown} color="amber" />
+        <StatCard
+          title="Total Debt"
+          value={thb(totalDebt)}
+          icon={CreditCard}
+          color="red"
+          tooltip="Σ currentBalance for all active debt accounts."
+        />
+        <StatCard
+          title="Monthly Payments"
+          value={thb(monthlyPayments)}
+          icon={TrendingDown}
+          color="amber"
+          tooltip="Σ (standardMonthlyPayment + extraMonthlyPayment) across all active debts.\nDSR = this ÷ monthly income"
+        />
         <StatCard
           title="Debt-to-Income"
           value={pct(dti)}
           subtitle={dti < 0.3 ? "Good (<30%)" : dti < 0.4 ? "Moderate" : "High (>40%)"}
           icon={AlertTriangle}
           color={dti < 0.3 ? "green" : dti < 0.4 ? "amber" : "red"}
+          tooltip="= Total Debt ÷ (Monthly Income × 12)\nSafe <25% · Caution 25–40% · High >40%"
         />
         <StatCard
           title="Debt Service Ratio"
@@ -417,6 +431,7 @@ export default function DebtsPage() {
           subtitle={dsr < 0.35 ? "Manageable (<35%)" : "Review needed"}
           icon={AlertTriangle}
           color={dsr < 0.35 ? "green" : "red"}
+          tooltip="= Monthly Payments ÷ Monthly Income\nThai banks: <35% safe, >40% rejection risk"
         />
       </div>
 
