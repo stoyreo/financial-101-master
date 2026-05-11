@@ -90,6 +90,12 @@ export default function SignupPage() {
         return;
       }
 
+      // 🔐 Clear any in-memory state from a previous user before activating the new session.
+      // This ensures a brand-new user always starts with clean seed data.
+      try {
+        sessionStorage.removeItem("financial-planner-storage-v3");
+      } catch { /* non-fatal */ }
+
       // Synthesize the session
       synthesizeSession(appUser);
 

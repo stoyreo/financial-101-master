@@ -70,6 +70,39 @@ export function getSession(): Session | null {
  * Called by middleware/auth callback to populate the session cache.
  */
 export function synthesizeSession(appUser: AppUser): Session {
+  // 🔐 Clear any previous user's store data before activating a new session.
+  // Without this, a new user signing up in the same browser session inherits
+  // the previous user's in-memory Zustand state (the "data flood" bug).
+  if (isClient) {
+    // Fire-and-forget: async import to avoid circular dependency
+    (async () => {
+      try {
+        const { useStore } = await import("./store");
+        const seedMod = await import("./seed");
+        const { buildDefaultMerchantRules } = await import("./categorize");
+        useStore.setState({
+          profile: seedMod.seedProfile,
+          incomes: seedMod.seedIncomes,
+          expenses: seedMod.seedExpenses,
+          debts: seedMod.seedDebts,
+          investments: seedMod.seedInvestments,
+          retirement: seedMod.seedRetirement,
+          tax: seedMod.seedTax,
+          scenarios: seedMod.seedScenarios,
+          activeScenarioId: "base",
+          isSeedLoaded: true,
+          transactions: [],
+          merchantRules: buildDefaultMerchantRules(),
+          statementImports: [],
+          customExpenseCategories: [],
+          yearlyForecast: [],
+          monthlyForecast: [],
+        }, true); // replace = true → full state reset
+        sessionStorage.removeItem("financial-planner-storage-v3");
+      } catch { /* non-fatal */ }
+    })();
+  }
+
   const session: Session = {
     userId: appUser.id,
     username: appUser.username,

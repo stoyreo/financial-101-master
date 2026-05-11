@@ -173,6 +173,9 @@ export interface Scenario {
   assumptions: ScenarioAssumptions;
   createdAt: string;
   tag?: "good" | "bad" | "custom";
+  clusters?: string[];                           // e.g. ["Wealth Accumulation & Growth"]
+  riskLevel?: "low" | "medium" | "high";        // Low/Med/High
+  timeHorizon?: "short" | "medium" | "long";    // 1-2y / 3-5y / 5y+
 }
 
 // ── Forecast Results ─────────────────────────────────────

@@ -37,6 +37,9 @@ function defaultScenario(): Omit<Scenario, "id" | "createdAt"> {
   return {
     name: "", description: "", isBase: false,
     color: SCENARIO_COLORS[Math.floor(Math.random() * SCENARIO_COLORS.length)],
+    clusters: ["Wealth Accumulation & Growth"],
+    riskLevel: "medium",
+    timeHorizon: "medium",
     assumptions: {
       incomeGrowthRate: 0.04, inflationRate: 0.03, investmentReturnRate: 0.07,
       mortgageExtraMonthlyPayment: 5_000, annualLumpSumPrepayment: 0,
@@ -236,98 +239,129 @@ export default function ScenariosPage() {
               </div>
             </div>
 
-            {/* Scenarios Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {scenarios
-                .filter((s) => {
-                  // Text filter
-                  const matchesQuery = query === "" ||
-                    s.name.toLowerCase().includes(query.toLowerCase()) ||
-                    s.description.toLowerCase().includes(query.toLowerCase());
+            {/* Scenarios Grid - Organized by Cluster */}
+            <div className="space-y-6">
+              {(() => {
+                const filtered = scenarios
+                  .filter((s) => {
+                    const matchesQuery = query === "" ||
+                      s.name.toLowerCase().includes(query.toLowerCase()) ||
+                      s.description.toLowerCase().includes(query.toLowerCase());
+                    if (!matchesQuery) return false;
 
-                  if (!matchesQuery) return false;
+                    if (filter === "all") return true;
+                    if (filter === "good") return s.tag === "good";
+                    if (filter === "bad") return s.tag === "bad";
+                    if (filter === "custom") {
+                      const isInSeed = seedScenarios.some(seed => seed.id === s.id);
+                      return !isInSeed || s.tag === "custom";
+                    }
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    const aInSeed = seedScenarios.findIndex(seed => seed.id === a.id);
+                    const bInSeed = seedScenarios.findIndex(seed => seed.id === b.id);
+                    if (aInSeed !== -1 && bInSeed !== -1) return aInSeed - bInSeed;
+                    if (aInSeed !== -1) return -1;
+                    if (bInSeed !== -1) return 1;
+                    return a.name.localeCompare(b.name);
+                  });
 
-                  // Tag filter
-                  if (filter === "all") return true;
-                  if (filter === "good") return s.tag === "good";
-                  if (filter === "bad") return s.tag === "bad";
-                  if (filter === "custom") {
-                    // Custom = not in seed list OR explicitly tagged custom
-                    const isInSeed = seedScenarios.some(seed => seed.id === s.id);
-                    return !isInSeed || s.tag === "custom";
-                  }
-                  return true;
-                })
-                .sort((a, b) => {
-                  // Sort: seed first (by original order), then user-created at end
-                  const aInSeed = seedScenarios.findIndex(seed => seed.id === a.id);
-                  const bInSeed = seedScenarios.findIndex(seed => seed.id === b.id);
+                // Group by cluster
+                const clusterGroups = new Map<string, Scenario[]>();
+                const CLUSTERS = ["Wealth Accumulation & Growth", "Risk Management & Stability", "Income & Compensation"];
 
-                  if (aInSeed !== -1 && bInSeed !== -1) return aInSeed - bInSeed;
-                  if (aInSeed !== -1) return -1;
-                  if (bInSeed !== -1) return 1;
-                  return a.name.localeCompare(b.name);
-                })
-                .map((s) => {
-                  const isActive = s.id === activeScenarioId;
-                  const isBaseScenario = s.isBase;
-                  return (
-                    <Card key={s.id} className={`hover:shadow-md transition-shadow flex flex-col ${isActive ? "ring-2 ring-primary" : ""}`}>
-                      <CardContent className="p-3 flex-1 flex flex-col">
-                        <div className="font-semibold text-sm">{s.name}</div>
-                        <p className="text-[11px] text-muted-foreground mb-3 line-clamp-2 flex-1">{s.description}</p>
+                CLUSTERS.forEach(c => clusterGroups.set(c, []));
 
-                        {/* 4-button action row */}
-                        <div className="flex gap-1 items-center mt-auto pt-2">
-                          {/* Activate button (~60% width) */}
-                          <Button
-                            size="sm"
-                            variant={isActive ? "default" : "ghost"}
-                            className="flex-1 text-xs h-7"
-                            onClick={() => setActiveScenario(s.id)}
-                          >
-                            {isActive ? "Active" : "Activate"}
-                          </Button>
+                filtered.forEach(s => {
+                  const clusters = s.clusters || ["Wealth Accumulation & Growth"];
+                  clusters.forEach(c => {
+                    if (clusterGroups.has(c)) {
+                      clusterGroups.get(c)!.push(s);
+                    }
+                  });
+                });
 
-                          {/* Edit icon button */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => openEdit(s)}
-                            title="Edit"
-                          >
-                            <Edit size={12} />
-                          </Button>
+                return (
+                  <>
+                    {CLUSTERS.map(cluster => {
+                      const items = clusterGroups.get(cluster) || [];
+                      if (items.length === 0) return null;
 
-                          {/* Copy icon button */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 w-7 p-0"
-                            onClick={() => addScenario({ ...s, name: s.name + " (copy)", isBase: false, tag: undefined })}
-                            title="Copy"
-                          >
-                            <Copy size={12} />
-                          </Button>
+                      return (
+                        <div key={cluster}>
+                          <div className="flex items-center gap-2 mb-3 pb-2 border-b">
+                            <h3 className="text-sm font-semibold">{cluster}</h3>
+                            <Badge variant="outline" className="text-[10px]">{items.length}</Badge>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                            {items.map((s) => {
+                              const isActive = s.id === activeScenarioId;
+                              const isBaseScenario = s.isBase;
+                              return (
+                                <Card key={s.id} className={`hover:shadow-md transition-shadow flex flex-col ${isActive ? "ring-2 ring-primary" : ""}`}>
+                                  <CardContent className="p-3 flex-1 flex flex-col">
+                                    <div className="flex items-start justify-between gap-2 mb-1">
+                                      <div className="font-semibold text-sm flex-1">{s.name}</div>
+                                      {s.riskLevel && (
+                                        <Badge variant="secondary" className="text-[9px] h-5 shrink-0">
+                                          {s.riskLevel === "low" ? "🟢" : s.riskLevel === "medium" ? "🟡" : "🔴"}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] text-muted-foreground mb-3 line-clamp-2 flex-1">{s.description}</p>
 
-                          {/* Trash icon button (only for non-base) */}
-                          {!isBaseScenario && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 w-7 p-0"
-                              onClick={() => handleDelete(s.id)}
-                              title="Delete"
-                            >
-                              <Trash2 size={12} />
-                            </Button>
-                          )}
+                                    {/* 4-button action row */}
+                                    <div className="flex gap-1 items-center mt-auto pt-2">
+                                      <Button
+                                        size="sm"
+                                        variant={isActive ? "default" : "ghost"}
+                                        className="flex-1 text-xs h-7"
+                                        onClick={() => setActiveScenario(s.id)}
+                                      >
+                                        {isActive ? "Active" : "Activate"}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 p-0"
+                                        onClick={() => openEdit(s)}
+                                        title="Edit"
+                                      >
+                                        <Edit size={12} />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 p-0"
+                                        onClick={() => addScenario({ ...s, name: s.name + " (copy)", isBase: false, tag: undefined })}
+                                        title="Copy"
+                                      >
+                                        <Copy size={12} />
+                                      </Button>
+                                      {!isBaseScenario && (
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 w-7 p-0"
+                                          onClick={() => handleDelete(s.id)}
+                                          title="Delete"
+                                        >
+                                          <Trash2 size={12} />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                      );
+                    })}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </TabsContent>
@@ -499,6 +533,51 @@ export default function ScenariosPage() {
           <div>
             <Label>Description</Label>
             <Input value={formData.description} onChange={e => setField("description", e.target.value)} className="mt-1" placeholder="What changes in this scenario?" />
+          </div>
+
+          {/* Cluster & Risk Metadata */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <Label>Primary Cluster</Label>
+              <Select value={(formData.clusters?.[0]) || "Wealth Accumulation & Growth"} onValueChange={(v) => setField("clusters", [v])}>
+                <Select.Trigger className="mt-1">
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="Wealth Accumulation & Growth">Wealth</Select.Item>
+                  <Select.Item value="Risk Management & Stability">Risk</Select.Item>
+                  <Select.Item value="Income & Compensation">Income</Select.Item>
+                </Select.Content>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Risk Level</Label>
+              <Select value={formData.riskLevel || "medium"} onValueChange={(v) => setField("riskLevel", v as "low" | "medium" | "high")}>
+                <Select.Trigger className="mt-1">
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="low">Low</Select.Item>
+                  <Select.Item value="medium">Medium</Select.Item>
+                  <Select.Item value="high">High</Select.Item>
+                </Select.Content>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Time Horizon</Label>
+              <Select value={formData.timeHorizon || "medium"} onValueChange={(v) => setField("timeHorizon", v as "short" | "medium" | "long")}>
+                <Select.Trigger className="mt-1">
+                  <Select.Value />
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="short">1-2 years</Select.Item>
+                  <Select.Item value="medium">3-5 years</Select.Item>
+                  <Select.Item value="long">5+ years</Select.Item>
+                </Select.Content>
+              </Select>
+            </div>
           </div>
 
           {/* Growth & Inflation */}
