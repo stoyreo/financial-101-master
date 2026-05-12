@@ -111,8 +111,10 @@ interface Store {
   lastLocalSaveTime: string | null;
   lastRemoteSaveTime: string | null;
   lastSyncError: string | null;
+  isHydratedFromRemote: boolean;
   setLocalSyncStatus: (status: "idle" | "saving" | "completed" | "error", error?: string) => void;
   setRemoteSyncStatus: (status: "idle" | "saving" | "completed" | "error", error?: string) => void;
+  setHydratedFromRemote: (v: boolean) => void;
 
   // ── Utility ───────────────────────────────────────────
   reloadScenariosFromSeed: () => void;       // Reload only scenarios without losing other data
@@ -172,6 +174,7 @@ export const useStore = create<Store>()(
       lastLocalSaveTime: null,
       lastRemoteSaveTime: null,
       lastSyncError: null,
+      isHydratedFromRemote: false,
 
       // ── Profile ──────────────────────────────────────
       setProfile: (p) => set((state) => {
@@ -475,8 +478,16 @@ export const useStore = create<Store>()(
             data = remoteResult.data;
             // Sync remote data back to localStorage
             persistUserData(session.storageKey, data);
+            // ✅ We've successfully read the authoritative server state.
+            // Mark the store as hydrated so auto-sync can now POST back to server.
+            get().setHydratedFromRemote(true);
+          } else if (remoteResult.error === "not_found") {
+            // No server data yet for this user — seed is acceptable to push.
+            data = loadUserData(session.storageKey);
+            get().setHydratedFromRemote(true);
           } else {
-            // Fall back to localStorage
+            // Any other error (network, server error, etc.) — keep flag false
+            // so we never overwrite remote data we failed to read.
             data = loadUserData(session.storageKey);
           }
 
@@ -792,6 +803,9 @@ export const useStore = create<Store>()(
         if (status === "error") {
           state.lastSyncError = error || "Remote save failed";
         }
+      }),
+      setHydratedFromRemote: (v) => set((state) => {
+        state.isHydratedFromRemote = v;
       }),
     })),
     {

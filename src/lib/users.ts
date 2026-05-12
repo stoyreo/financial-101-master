@@ -234,6 +234,21 @@ export function getStartingSnapshot(role: UserRole, displayName: string = "") {
 }
 
 export async function saveRemoteUserData(storageKey: string, data: any): Promise<{ ok: boolean; savedAt?: string; error?: string }> {
+  // 🔐 Don't push seed data over real server data. Wait until we've
+  // confirmed what the server has for this user via a successful GET /api/sync.
+  // Without this gate, the auto-sync timer can push seed ("Somchai") to the server
+  // before the post-login remote read completes, corrupting the user's row.
+  if (isClient) {
+    try {
+      const { useStore } = await import("./store");
+      const { isHydratedFromRemote } = useStore.getState();
+      if (!isHydratedFromRemote) {
+        console.log(`[saveRemoteUserData] Skipping POST — not yet hydrated from remote for ${storageKey}`);
+        return { ok: false, error: "Not yet hydrated from remote" };
+      }
+    } catch { /* non-fatal — continue with POST */ }
+  }
+
   try {
     const response = await fetch("/api/sync", {
       method: "POST",

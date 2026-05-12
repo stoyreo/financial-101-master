@@ -70,15 +70,13 @@ export function getSession(): Session | null {
  * Called by middleware/auth callback to populate the session cache.
  */
 export function synthesizeSession(appUser: AppUser): Session {
-  // 🔐 Clear any previous user's store data before activating a new session.
-  // Without this, a new user signing up in the same browser session inherits
-  // the previous user's in-memory Zustand state (the "data flood" bug).
-  // Only reset when there is an existing session belonging to a DIFFERENT user.
-  // - No existing session (fresh login): skip reset — no data flood risk
-  // - Same user re-logging in: skip reset — would wipe their own real data
-  // - Different user logging in/signing up: reset — prevents data leakage
-  const existingSession = isClient ? getSession() : null;
-  if (isClient && existingSession && existingSession.userId !== appUser.id) {
+  // 🔐 ALWAYS reset Zustand to seed state on session synthesis.
+  // Rationale: skipping the reset when there is no prior session leaves the
+  // store holding the seed profile ("Somchai"), which the auto-sync timer
+  // then pushes to /api/sync under THIS user's storageKey — corrupting
+  // the server row. After reset, the server data is re-hydrated by the
+  // post-login GET /api/sync flow (see src/lib/users.ts → loadUserData).
+  if (isClient) {
     // Fire-and-forget: async import to avoid circular dependency
     (async () => {
       try {
