@@ -1,5 +1,12 @@
 export const APP_VERSION = "3.4.0";
-export const BUILD_DATE = "2026-04-26";
+export const BUILD_DATE = "2026-05-12";
+
+// Format version with date for display: "v3.4.0 • May 12, 2026"
+export function getVersionDisplay(): string {
+  const date = new Date(BUILD_DATE);
+  const formatted = date.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  return `v${APP_VERSION} • ${formatted}`;
+}
 
 export interface ChangelogEntry {
   version: string;
@@ -10,13 +17,15 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "3.4.0",
-    date: "2026-04-26",
+    date: "2026-05-12",
     changes: [
+      "Updated version display to include date — now shows 'v3.4.0 • May 12, 2026' format",
+      "Synced version log with live artifacts from Financial 101 Dashboard",
+      "Enhanced VersionPanel with version + date display throughout the app",
       "Sidebar identity label now shows the real account display name for member/admin roles instead of falling back to 'Demo User'",
       "Newly-created member accounts start with a completely empty profile and empty income/expense/debt/investment lists - no more demo fixture seeded under member namespaces",
       "findOrCreateUserByEmail now adopts the admin-provisioned remote app_users row on first login (correct displayName, role, storage_key) instead of creating a duplicate local user with demo seed data",
       "Demo accounts (role=\"demo\") still receive the full demo snapshot - only member/admin starts blank",
-      "Version bump to 3.4.0",
     ],
   },
   {

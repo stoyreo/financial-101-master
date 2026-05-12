@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { APP_VERSION, BUILD_DATE, CHANGELOG } from "@/lib/version";
+import { APP_VERSION, BUILD_DATE, CHANGELOG, getVersionDisplay } from "@/lib/version";
 import { listSnapshots, saveSnapshot, deleteSnapshot, type Snapshot } from "@/lib/snapshots";
 import { useStore } from "@/lib/store";
 import { Modal, Button, Badge, Alert } from "@/components/ui";
@@ -50,10 +50,10 @@ export function VersionPanel() {
         title="Version & Snapshots"
       >
         <Tag size={12} />
-        v{APP_VERSION}
+        {getVersionDisplay()}
       </button>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={`Financial 101 Master crafted by Toy — v${APP_VERSION}`} className="max-w-xl">
+      <Modal open={open} onClose={() => setOpen(false)} title={`Financial 101 Master crafted by Toy — ${getVersionDisplay()}`} className="max-w-xl">
         {/* Tab switcher */}
         <div className="flex gap-1 mb-4 bg-muted p-1 rounded-lg">
           {(["changelog", "snapshots"] as const).map(t => (

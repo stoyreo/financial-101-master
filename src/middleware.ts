@@ -8,7 +8,9 @@ export async function middleware(req: NextRequest) {
 
   const path = req.nextUrl.pathname;
   const isPublic = PUBLIC_PATHS.some(p => path === p || path.startsWith(p + "/"));
-  const isAsset = path.startsWith("/_next") || path.startsWith("/api/") || path.includes(".");
+  // 🔐 CRITICAL: /api/sync needs Supabase auth setup, so don't skip it in middleware
+  const isSkippableAPI = path.startsWith("/api/") && !path.startsWith("/api/sync");
+  const isAsset = path.startsWith("/_next") || isSkippableAPI || path.includes(".");
 
   // Skip auth check for public paths and assets
   if (isPublic || isAsset) {

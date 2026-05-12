@@ -36,7 +36,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             const appUser = await ensureAppUserFromSupabase(sbSession.user.email, sbSession.user.id);
             if (appUser) {
               synthesizeSession(appUser);
-              if (__loadedStorageKey !== appUser.storageKey) {
+              // Also re-hydrate when the store says it isn't hydrated yet
+              // (clearSession resets isHydratedFromRemote, but the module-
+              // scope __loadedStorageKey doesn't reset on logout — so a
+              // same-user logout→login would otherwise skip the GET and
+              // leave AutoSync POSTs blocked on "Not yet hydrated").
+              const isHydrated = useStore.getState().isHydratedFromRemote;
+              if (__loadedStorageKey !== appUser.storageKey || !isHydrated) {
                 __loadedStorageKey = appUser.storageKey;
                 try {
                   await loadUserNamespace();
@@ -62,7 +68,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // rely on the Zustand persist middleware (localStorage) + AutoSync to
     // keep state coherent. Re-fetching from /api/sync on every nav races
     // with the 800ms AutoSync debounce and wipes freshly-imported data.
-    if (__loadedStorageKey !== session.storageKey) {
+    //
+    // BUT: we MUST re-hydrate after a logout (clearSession resets
+    // isHydratedFromRemote=false). The module-scope __loadedStorageKey is
+    // not reset by logout, so a same-user logout→login in the same tab
+    // would otherwise short-circuit this block, leaving the store in a
+    // never-hydrated state and AutoSync POSTs permanently blocked
+    // with "Not yet hydrated from remote". Re-checking isHydratedFromRemote
+    // fixes that without re-fetching on every navigation.
+    const isHydrated = useStore.getState().isHydratedFromRemote;
+    if (__loadedStorageKey !== session.storageKey || !isHydrated) {
       __loadedStorageKey = session.storageKey;
       // Await namespace load so the dashboard never renders with stale seed data
       (async () => {
