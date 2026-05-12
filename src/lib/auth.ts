@@ -1,5 +1,5 @@
 import { getUserByUsername, setCurrentUserId, getCurrentUserId,
-  getUserById, updateUser, persistUserData, loadUserData, getDemoSnapshot, type AppUser, findOrCreateUserByEmail } from "./users";
+  getUserById, updateUser, persistUserData, loadUserData, getDemoSnapshot, getEmptySnapshot, type AppUser, findOrCreateUserByEmail } from "./users";
 
 export const SESSION_KEY = "fp_auth_session";
 const SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
@@ -70,36 +70,33 @@ export function getSession(): Session | null {
  * Called by middleware/auth callback to populate the session cache.
  */
 export function synthesizeSession(appUser: AppUser): Session {
-  // 🔐 ALWAYS reset Zustand to seed state on session synthesis.
-  // Rationale: skipping the reset when there is no prior session leaves the
-  // store holding the seed profile ("Somchai"), which the auto-sync timer
-  // then pushes to /api/sync under THIS user's storageKey — corrupting
-  // the server row. After reset, the server data is re-hydrated by the
-  // post-login GET /api/sync flow (see src/lib/users.ts → loadUserData).
+  // 🔐 Reset Zustand to a BLANK snapshot on session synthesis (not Somchai seed).
+  // The remote GET /api/sync will hydrate any real data the user has saved.
   if (isClient) {
     // Fire-and-forget: async import to avoid circular dependency
     (async () => {
       try {
         const { useStore } = await import("./store");
-        const seedMod = await import("./seed");
-        const { buildDefaultMerchantRules } = await import("./categorize");
+        const { getEmptySnapshot } = await import("./users");
+        const empty = getEmptySnapshot(appUser.username || "");
         useStore.setState({
-          profile: seedMod.seedProfile,
-          incomes: seedMod.seedIncomes,
-          expenses: seedMod.seedExpenses,
-          debts: seedMod.seedDebts,
-          investments: seedMod.seedInvestments,
-          retirement: seedMod.seedRetirement,
-          tax: seedMod.seedTax,
-          scenarios: seedMod.seedScenarios,
-          activeScenarioId: "base",
-          isSeedLoaded: true,
+          profile: empty.profile,
+          incomes: empty.incomes,
+          expenses: empty.expenses,
+          debts: empty.debts,
+          investments: empty.investments,
+          retirement: empty.retirement,
+          tax: empty.tax,
+          scenarios: empty.scenarios,
+          activeScenarioId: empty.activeScenarioId,
+          isSeedLoaded: false,
           transactions: [],
-          merchantRules: buildDefaultMerchantRules(),
+          merchantRules: [],
           statementImports: [],
           customExpenseCategories: [],
           yearlyForecast: [],
           monthlyForecast: [],
+          isHydratedFromRemote: false,
         }); // merge only — do NOT pass replace=true, that wipes all store action functions
         sessionStorage.removeItem("financial-planner-storage-v3");
       } catch { /* non-fatal */ }
@@ -131,26 +128,26 @@ export async function clearSession() {
   // Use dynamic import to avoid circular dependency: accounts.ts -> auth.ts -> store.ts -> accounts.ts
   try {
     const { useStore } = await import("./store");
-    // Reset store to seed state without calling clearStore (avoids circular import)
-    const { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios } = await import("./seed");
-    const { buildDefaultMerchantRules } = await import("./categorize");
+    const { getEmptySnapshot } = await import("./users");
+    const empty = getEmptySnapshot("");
     useStore.setState({
-      profile: seedProfile,
-      incomes: seedIncomes,
-      expenses: seedExpenses,
-      debts: seedDebts,
-      investments: seedInvestments,
-      retirement: seedRetirement,
-      tax: seedTax,
-      scenarios: seedScenarios,
-      activeScenarioId: "base",
-      isSeedLoaded: true,
+      profile: empty.profile,
+      incomes: empty.incomes,
+      expenses: empty.expenses,
+      debts: empty.debts,
+      investments: empty.investments,
+      retirement: empty.retirement,
+      tax: empty.tax,
+      scenarios: empty.scenarios,
+      activeScenarioId: empty.activeScenarioId,
+      isSeedLoaded: false,
       transactions: [],
-      merchantRules: buildDefaultMerchantRules(),
+      merchantRules: [],
       statementImports: [],
       customExpenseCategories: [],
       yearlyForecast: [],
       monthlyForecast: [],
+      isHydratedFromRemote: false,
     }); // merge only — do NOT pass replace=true
     sessionStorage.removeItem("financial-planner-storage-v3");
   } catch { /* non-fatal */ }

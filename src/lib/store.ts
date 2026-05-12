@@ -20,7 +20,7 @@ import {
   seedInvestments, seedRetirement, seedTax, seedScenarios,
 } from "./seed";
 import { buildDefaultMerchantRules, newMerchantRule } from "./categorize";
-import { loadUserData, persistUserData, saveRemoteUserData, loadRemoteUserData } from "./users";
+import { loadUserData, persistUserData, saveRemoteUserData, loadRemoteUserData, getEmptySnapshot } from "./users";
 import { getCurrentAccount } from "./accounts";
 import { getSession } from "./auth";
 import { looksLikeDemoData } from "./toyRealData";
@@ -151,18 +151,20 @@ function computeForecasts(state: any) {
 
 export const useStore = create<Store>()(
   persist(
-    immer((set, get) => ({
+    immer((set, get) => {
+      const _initial = getEmptySnapshot("");
+      return {
       // ── Initial state ──────────────────────────────────
-      profile: seedProfile,
-      incomes: seedIncomes,
-      expenses: seedExpenses,
-      debts: seedDebts,
-      investments: seedInvestments,
-      retirement: seedRetirement,
-      tax: seedTax,
-      scenarios: seedScenarios,
-      activeScenarioId: "base",
-      isSeedLoaded: true,
+      profile: _initial.profile,
+      incomes: _initial.incomes,
+      expenses: _initial.expenses,
+      debts: _initial.debts,
+      investments: _initial.investments,
+      retirement: _initial.retirement,
+      tax: _initial.tax,
+      scenarios: _initial.scenarios,
+      activeScenarioId: _initial.activeScenarioId,
+      isSeedLoaded: false,
       transactions: [],
       merchantRules: buildDefaultMerchantRules(),
       statementImports: [],
@@ -807,7 +809,8 @@ export const useStore = create<Store>()(
       setHydratedFromRemote: (v) => set((state) => {
         state.isHydratedFromRemote = v;
       }),
-    })),
+    };
+    }),
     {
       name: "financial-planner-storage-v3",
       storage: createJSONStorage(() => {
@@ -834,6 +837,7 @@ export const useStore = create<Store>()(
         merchantRules: state.merchantRules,
         statementImports: state.statementImports,
         customExpenseCategories: state.customExpenseCategories,
+        isHydratedFromRemote: state.isHydratedFromRemote,
         // Exclude sync status from persisted state
         // (localSyncStatus, remoteSyncStatus, lastLocalSaveTime, lastRemoteSaveTime, lastSyncError)
       }),

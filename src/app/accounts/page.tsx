@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getSession, sha256, isAdmin } from "@/lib/auth";
-import { getUsers, saveUsers, updateUser, getDemoSnapshot,
+import { getUsers, saveUsers, updateUser, getStartingSnapshot,
   persistUserData, type AppUser } from "@/lib/users";
 import { Card, CardHeader, CardTitle, CardContent, Button, Input,
   Label, Badge, Modal, PageHeader, Alert } from "@/components/ui";
@@ -48,9 +48,9 @@ export default function AccountsPage() {
   };
 
   const handleResetDemo = (user: AppUser) => {
-    if (!confirm(`Reset ${user.displayName}'s data to demo? This cannot be undone.`)) return;
-    persistUserData(user.storageKey, getDemoSnapshot());
-    flash(`${user.displayName}'s data reset to demo.`);
+    if (!confirm(`Reset ${user.displayName}'s data? This cannot be undone.`)) return;
+    persistUserData(user.storageKey, getStartingSnapshot(user.role, user.username || ""));
+    flash(`${user.displayName}'s data reset.`);
   };
 
   const handleToggleActive = (user: AppUser) => {
@@ -67,17 +67,19 @@ export default function AccountsPage() {
 
     const hash = await sha256(createPass);
     const newUserId = createName.toLowerCase().replace(/\s+/g, "-");
+    const username = createEmail.split("@")[0];
     const newUser: AppUser = {
       id: newUserId,
+      username,
       displayName: createName,
       email: createEmail,
       passwordHash: hash,
-      role: "viewer",
+      role: "member",
       isActive: true,
       dataMode: "own",
       storageKey: `financial-planner-data-${newUserId}`,
       createdAt: new Date().toISOString(),
-      lastLogin: null,
+      lastLogin: undefined,
     };
 
     const allUsers = getUsers();
@@ -86,7 +88,7 @@ export default function AccountsPage() {
     setShowCreateUser(false);
     setCreateName(""); setCreateEmail(""); setCreatePass("");
     flash(`✓ User "${createName}" created with isolated data.`);
-    persistUserData(newUser.storageKey, getDemoSnapshot());
+    persistUserData(newUser.storageKey, getStartingSnapshot(newUser.role, newUser.username || ""));
   };
 
   return (
@@ -119,7 +121,7 @@ export default function AccountsPage() {
                       <span className="font-semibold text-sm">{user.displayName}</span>
                       {isSelf && <Badge variant="default" className="text-[10px]">You</Badge>}
                       <Badge variant={user.role === "admin" ? "default" : "outline"} className="text-[10px]">
-                        {user.role === "admin" ? <><Shield size={9} className="mr-0.5" />Admin</> : <><Eye size={9} className="mr-0.5" />Viewer</>}
+                        {user.role === "admin" ? <><Shield size={9} className="mr-0.5" />Admin</> : <><Eye size={9} className="mr-0.5" />Member</>}
                       </Badge>
                       <Badge variant={user.isActive ? "success" : "warning"} className="text-[10px]">
                         {user.isActive ? "Active" : "Inactive"}
