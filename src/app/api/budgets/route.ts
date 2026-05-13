@@ -76,7 +76,8 @@ export async function GET(request: Request) {
     for (const expense of plan.expenses ?? []) {
       if (!expense.isActive) continue;
       if (!KNOWN_CATEGORIES.includes(expense.category)) continue;
-      const base = expense.budgetAmount ?? expense.amount;
+      // Use amount — matches exactly what Financial 101 Expenses page shows per category
+      const base = expense.amount;
       if (!base || base <= 0) continue;
       const monthly = toMonthly(base, expense.frequency);
       if (monthly <= 0) continue;
