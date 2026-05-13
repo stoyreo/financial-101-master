@@ -21,30 +21,36 @@ function toMonthly(amount: number, frequency: string): number {
 function getFallbackBudgets() {
   return {
     budgets: [
-      { category: 'Food',          monthly_budget: 12000 },
-      { category: 'Family',        monthly_budget: 10000 },
-      { category: 'Travel',        monthly_budget: 8333  },
-      { category: 'Shopping',      monthly_budget: 8000  },
-      { category: 'Transport',     monthly_budget: 6750  },
-      { category: 'Housing',       monthly_budget: 5000  },
-      { category: 'Utilities',     monthly_budget: 4000  },
-      { category: 'Pet',           monthly_budget: 4000  },
-      { category: 'Insurance',     monthly_budget: 2500  },
-      { category: 'Health',        monthly_budget: 1800  },
-      { category: 'Entertainment', monthly_budget: 1500  },
+      { category: 'Food',          monthly_budget: 20000 },
+      { category: 'Housing',       monthly_budget: 20000 },
+      { category: 'Health',        monthly_budget: 10833 },
+      { category: 'Travel',        monthly_budget: 10000 },
+      { category: 'Transport',     monthly_budget: 7500  },
+      { category: 'Utilities',     monthly_budget: 7296  },
+      { category: 'Shopping',      monthly_budget: 6000  },
+      { category: 'Family',        monthly_budget: 5000  },
+      { category: 'Pet',           monthly_budget: 5000  },
+      { category: 'Other',         monthly_budget: 3000  },
+      { category: 'Entertainment', monthly_budget: 1626  },
     ],
     source: 'fallback',
     generated_at: new Date().toISOString(),
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // ?key= lets the Expense Tracker fetch budgets for a specific Financial 101 user.
+  // Falls back to the admin user (fp_data_toy) when no key is supplied.
+  const { searchParams } = new URL(request.url);
+  const storageKey = searchParams.get('key') || 'fp_data_toy';
+
   try {
     const supabase = getSupabaseAdmin();
+
     const { data, error } = await supabase
       .from('user_data')
       .select('data')
-      .eq('storage_key', 'fp_data_toy')
+      .eq('storage_key', storageKey)
       .single();
 
     if (error || !data?.data) {
