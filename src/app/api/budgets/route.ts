@@ -18,31 +18,32 @@ function toMonthly(amount: number, frequency: string): number {
   }
 }
 
-function getFallbackBudgets() {
-  return {
-    budgets: [
-      { category: 'Food',          monthly_budget: 20000 },
-      { category: 'Housing',       monthly_budget: 20000 },
-      { category: 'Health',        monthly_budget: 10833 },
-      { category: 'Travel',        monthly_budget: 10000 },
-      { category: 'Transport',     monthly_budget: 7500  },
-      { category: 'Utilities',     monthly_budget: 7296  },
-      { category: 'Shopping',      monthly_budget: 6000  },
-      { category: 'Family',        monthly_budget: 5000  },
-      { category: 'Pet',           monthly_budget: 5000  },
-      { category: 'Other',         monthly_budget: 3000  },
-      { category: 'Entertainment', monthly_budget: 1626  },
-    ],
-    source: 'fallback',
-    generated_at: new Date().toISOString(),
-  };
-}
-
 export async function GET(request: Request) {
-  // ?key= lets the Expense Tracker fetch budgets for a specific Financial 101 user.
-  // Falls back to the admin user (fp_data_toy) when no key is supplied.
   const { searchParams } = new URL(request.url);
-  const storageKey = searchParams.get('key') || 'fp_data_toy';
+  const storageKey = searchParams.get('key');
+
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': 'no-store',
+  } as const;
+
+  // ── Bug 1 fix ──────────────────────────────────────────────
+  // No key supplied → this caller (LINE user / expense tracker)
+  // has not been linked to a Financial 101 account.
+  // Return an explicit empty payload so the expense tracker bot
+  // knows NOT to display any budget, rather than falling through
+  // to the admin user's data.
+  if (!storageKey) {
+    return NextResponse.json(
+      {
+        budgets: [],
+        source: 'no_account',
+        message: 'No storage key provided. Link your LINE account to Financial 101 first.',
+      },
+      { headers: corsHeaders }
+    );
+  }
+  // ────────────────────────────────────────────────────────────
 
   try {
     const supabase = getSupabaseAdmin();
@@ -53,13 +54,16 @@ export async function GET(request: Request) {
       .eq('storage_key', storageKey)
       .single();
 
+    // Key not found in DB → also "no account" (not admin fallback)
     if (error || !data?.data) {
-      return NextResponse.json(getFallbackBudgets(), {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'public, max-age=300, s-maxage=300',
+      return NextResponse.json(
+        {
+          budgets: [],
+          source: 'not_found',
+          message: 'No Financial 101 data found for this storage key.',
         },
-      });
+        { status: 404, headers: corsHeaders }
+      );
     }
 
     const plan = data.data as {
@@ -76,7 +80,6 @@ export async function GET(request: Request) {
     for (const expense of plan.expenses ?? []) {
       if (!expense.isActive) continue;
       if (!KNOWN_CATEGORIES.includes(expense.category)) continue;
-      // Use amount — matches exactly what Financial 101 Expenses page shows per category
       const base = expense.amount;
       if (!base || base <= 0) continue;
       const monthly = toMonthly(base, expense.frequency);
@@ -92,7 +95,11 @@ export async function GET(request: Request) {
       .sort((a, b) => b.monthly_budget - a.monthly_budget);
 
     return NextResponse.json(
-      { budgets, source: 'financial-101', generated_at: new Date().toISOString() },
+      {
+        budgets,
+        source: 'financial-101',
+        generated_at: new Date().toISOString(),
+      },
       {
         headers: {
           'Access-Control-Allow-Origin': '*',
@@ -102,11 +109,9 @@ export async function GET(request: Request) {
     );
   } catch (err) {
     console.error('[/api/budgets] error:', err);
-    return NextResponse.json(getFallbackBudgets(), {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=60, s-maxage=60',
-      },
-    });
+    return NextResponse.json(
+      { budgets: [], source: 'error', message: 'Server error.' },
+      { status: 500, headers: corsHeaders }
+    );
   }
 }
