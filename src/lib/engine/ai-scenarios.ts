@@ -569,6 +569,63 @@ export interface AlstomSTICriterion {
 
 export type AlstomQuote = { price: number; change1y: number; asOf: string; source: string };
 
+/**
+ * Metadata about the latest document published on
+ * alstom.com/finance/financial-results. Produced by the
+ * `/api/alstom/financial-results` route and consumed here so the
+ * STI module can flip from "preliminary" to "audited" automatically.
+ */
+export type AlstomReleaseInfo = {
+  found: boolean;
+  fiscalYear: string;
+  documentLabel: string;
+  documentDate: string;     // ISO yyyy-mm-dd
+  documentUrl: string;
+  pageUrl: string;
+  classification:
+    | "annual-results-audited"
+    | "preliminary"
+    | "h1"
+    | "q3"
+    | "q1"
+    | "other";
+  isPostPreliminary: boolean;
+  fetchedAt: string;
+  source: "alstom.com" | "fallback";
+};
+
+/**
+ * AUDITED-OVERRIDE block.
+ *
+ * When Alstom publishes the audited FY 2025/26 figures (expected
+ * mid-May 2026), flip `enabled` to true and fill in the final numbers.
+ * `analyzeAlstomSTI` will then use these instead of the preliminary
+ * actuals without any other code edits required.
+ *
+ * Leaving `enabled: false` is the safe default — the module continues
+ * to operate from the 16-Apr-2026 preliminary results.
+ */
+export type AlstomAuditedOverride = {
+  enabled: boolean;
+  aebitMarginPct?: number;       // e.g. 6.1
+  fcfEurMillions?: number;       // e.g. 332
+  ordersEurBillions?: number;    // e.g. 27.6
+  organicSalesGrowthPct?: number; // e.g. 7.0
+  releaseDateISO?: string;        // e.g. "2026-05-14"
+  releaseUrl?: string;
+};
+
+export const ALSTOM_FY2526_AUDITED_OVERRIDE: AlstomAuditedOverride = {
+  enabled: false,
+  // Fill these in once the audited PDF is out:
+  aebitMarginPct: undefined,
+  fcfEurMillions: undefined,
+  ordersEurBillions: undefined,
+  organicSalesGrowthPct: undefined,
+  releaseDateISO: undefined,
+  releaseUrl: undefined,
+};
+
 export interface AlstomSTIAnalysis {
   moduleId: "alstom-sti-fy2526";
   moduleName: string;
@@ -587,9 +644,14 @@ export interface AlstomSTIAnalysis {
   sources: { label: string; url: string }[];
   disclaimer: string;
   livePrice?: AlstomQuote;
+  /** Set when an audited release supersedes the preliminary results. */
+  release?: AlstomReleaseInfo;
+  /** "preliminary" while we're operating off the 16-Apr-2026 press release;
+   *  "audited" once a post-preliminary annual-results PDF has been ingested. */
+  resultsStage: "preliminary" | "audited";
 }
 
-export function analyzeAlstomSTI(): AlstomSTIAnalysis {
+export function analyzeAlstomSTI(release?: AlstomReleaseInfo): AlstomSTIAnalysis {
   // FY 2025/26 COMMITMENTS (from May-2025 guidance, reconfirmed H1 and Q3):
   //   - Organic sales growth: > 5%
   //   - Adjusted EBIT margin: ~ 7%
@@ -602,56 +664,119 @@ export function analyzeAlstomSTI(): AlstomSTIAnalysis {
   //   - Free Cash Flow: ~EUR 330m (within EUR 200-400m range)
   //   - Orders: EUR 27.6bn, book-to-bill 1.4, backlog > EUR 100bn (RECORD)
 
+  // Two routes into "audited" mode, ordered by trust:
+  //   1. Hard-coded ALSTOM_FY2526_AUDITED_OVERRIDE with numbers transcribed
+  //      from the audited PDF (highest trust, full numerical update).
+  //   2. The API has detected an annual-results-audited document but we
+  //      haven't yet transcribed the numbers (label-only update; still
+  //      uses preliminary numerics but flags stage = "audited" with
+  //      elevated confidence and refreshed sources).
+  const ov = ALSTOM_FY2526_AUDITED_OVERRIDE;
+  const auditedByDoc =
+    release?.found === true &&
+    release.classification === "annual-results-audited" &&
+    release.isPostPreliminary === true;
+  const auditedByOverride = ov.enabled === true;
+  const resultsStage: "preliminary" | "audited" =
+    auditedByOverride || auditedByDoc ? "audited" : "preliminary";
+
+  // aEBIT — preliminary 6.0%, target 7.0%. Override wins if enabled.
+  const aebitActual = auditedByOverride && ov.aebitMarginPct !== undefined
+    ? ov.aebitMarginPct
+    : 6.0;
+  const aebitTarget = 7.0;
+  const aebitAchievement = aebitActual / aebitTarget;
+  // STI threshold typically 90% of target; below threshold = 0 payout.
+  const aebitPayout = aebitAchievement >= 0.9
+    ? Math.min(1.5, aebitAchievement)
+    : 0;
+  const aebitStatus: AlstomSTICriterion["status"] =
+    aebitAchievement >= 1.05 ? "exceeded"
+    : aebitAchievement >= 1.00 ? "met"
+    : aebitAchievement >= 0.90 ? "partial"
+    : "missed";
+
+  // FCF — preliminary ~EUR 330m, target midpoint EUR 300m.
+  const fcfActual = auditedByOverride && ov.fcfEurMillions !== undefined
+    ? ov.fcfEurMillions
+    : 330;
+  const fcfPayout = Math.max(0, Math.min(1.5, fcfActual / 300));
+  const fcfStatus: AlstomSTICriterion["status"] =
+    fcfPayout >= 1.05 ? "exceeded"
+    : fcfPayout >= 1.00 ? "met"
+    : fcfPayout >= 0.90 ? "partial"
+    : "missed";
+
+  // Orders — record EUR 27.6bn, book-to-bill 1.4 (caps at 1.5x payout).
+  const ordersActual = auditedByOverride && ov.ordersEurBillions !== undefined
+    ? ov.ordersEurBillions
+    : 27.6;
+  // Stretch target band 22-24bn; anything materially above hits the 1.5x cap.
+  const ordersPayout = Math.max(0, Math.min(1.5, ordersActual / 22));
+
+  // Organic sales growth — preliminary +7%, target > 5%.
+  const salesActual = auditedByOverride && ov.organicSalesGrowthPct !== undefined
+    ? ov.organicSalesGrowthPct
+    : 7.0;
+  const salesPayout = Math.max(0, Math.min(1.5, salesActual / 5));
+  const salesStatus: AlstomSTICriterion["status"] =
+    salesPayout >= 1.05 ? "exceeded"
+    : salesPayout >= 1.00 ? "met"
+    : salesPayout >= 0.90 ? "partial"
+    : "missed";
+
+  const stageWord = resultsStage === "audited" ? "audited" : "preliminary";
+
   const criteria: AlstomSTICriterion[] = [
     {
       id: "aebit",
       name: "Adjusted EBIT margin",
       weight: 0.40,
-      targetLabel: "~ 7.0%",
-      actualLabel: "~ 6.0%",
-      achievement: 6.0 / 7.0,  // 0.857
-      // STI threshold typically 90% of target; below threshold = 0 payout.
-      // At 85.7% achievement (below 90% floor), payout = 0.
-      payoutFactor: 0,
-      status: "missed",
+      targetLabel: `~ ${aebitTarget.toFixed(1)}%`,
+      actualLabel: `~ ${aebitActual.toFixed(1)}%`,
+      achievement: aebitAchievement,
+      payoutFactor: aebitPayout,
+      status: aebitStatus,
       commentary:
-        "Margin came in at ~6% vs ~7% guided, principally due to slower-than-expected ramp-up on certain rolling-stock projects. Below the standard 90% STI threshold for this KPI, so this component is expected to pay 0.",
+        aebitPayout === 0
+          ? `Margin came in at ~${aebitActual.toFixed(1)}% vs ~${aebitTarget.toFixed(1)}% guided (${stageWord}), principally due to slower-than-expected ramp-up on certain rolling-stock projects. Below the standard 90% STI threshold for this KPI, so this component is expected to pay 0.`
+          : `Margin of ~${aebitActual.toFixed(1)}% vs ~${aebitTarget.toFixed(1)}% guided (${stageWord}); STI threshold cleared, KPI pays at ${Math.round(aebitPayout * 100)}% of target.`,
     },
     {
       id: "fcf",
       name: "Free Cash Flow",
       weight: 0.30,
       targetLabel: "EUR 200m - 400m",
-      actualLabel: "~ EUR 330m",
-      achievement: 330 / 300,  // 1.10 (vs midpoint of range)
-      payoutFactor: 1.10,
-      status: "met",
+      actualLabel: `~ EUR ${Math.round(fcfActual)}m`,
+      achievement: fcfActual / 300,
+      payoutFactor: fcfPayout,
+      status: fcfStatus,
       commentary:
-        "Free Cash Flow of ~EUR 330m is comfortably inside the EUR 200-400m guidance corridor and above the midpoint. Pays slightly above target.",
+        `Free Cash Flow of ~EUR ${Math.round(fcfActual)}m vs the EUR 200-400m guidance corridor (${stageWord}). Pays at ${Math.round(fcfPayout * 100)}% of target.`,
     },
     {
       id: "orders",
       name: "Order intake / book-to-bill",
       weight: 0.20,
       targetLabel: "Book-to-bill >= 1.0 (stretch EUR 22-24bn)",
-      actualLabel: "EUR 27.6bn, book-to-bill 1.4 (record)",
-      achievement: 1.5,  // capped
-      payoutFactor: 1.5,
-      status: "exceeded",
+      actualLabel: `EUR ${ordersActual.toFixed(1)}bn (record)`,
+      achievement: ordersPayout,
+      payoutFactor: ordersPayout,
+      status: ordersPayout >= 1.4 ? "exceeded" : ordersPayout >= 1.0 ? "met" : "partial",
       commentary:
-        "Record EUR 27.6bn order intake (book-to-bill 1.4) drives backlog above EUR 100bn. Far above any reasonable target - pays at the 150% cap.",
+        `EUR ${ordersActual.toFixed(1)}bn order intake (${stageWord}) drives backlog above EUR 100bn. Far above any reasonable target - pays at ${Math.round(ordersPayout * 100)}%.`,
     },
     {
       id: "sales",
       name: "Organic sales growth",
       weight: 0.10,
       targetLabel: "> 5% organic",
-      actualLabel: "+7% organic (+4% reported)",
-      achievement: 7 / 5,  // 1.40
-      payoutFactor: 1.40,
-      status: "exceeded",
+      actualLabel: `+${salesActual.toFixed(1)}% organic`,
+      achievement: salesActual / 5,
+      payoutFactor: salesPayout,
+      status: salesStatus,
       commentary:
-        "Organic sales growth of +7% exceeds the >5% guidance. Reported growth was lower (+4%) because of 2.8pp FX headwind and 0.6pp scope effect, but STI plans typically measure the organic metric.",
+        `Organic sales growth of +${salesActual.toFixed(1)}% (${stageWord}) vs the >5% guidance. STI plans typically measure the organic metric.`,
     },
   ];
 
@@ -683,45 +808,87 @@ export function analyzeAlstomSTI(): AlstomSTIAnalysis {
       ? "Significantly below target"
       : "At risk of no payout";
 
+  const stageLabel = resultsStage === "audited" ? "Audited" : "Preliminary";
   const narrative = [
     `Alstom closed FY 2025/26 with a mixed performance against the guidance it reconfirmed at H1 (Nov-2025) and Q3 (Jan-2026).`,
-    `Strengths: record EUR 27.6bn order intake, EUR 100bn+ backlog, and Free Cash Flow of ~EUR 330m - firmly inside the EUR 200-400m guided range.`,
-    `Weakness: Adjusted EBIT margin landed at ~6.0%, materially short of the ~7.0% commitment, reflecting margin pressure on legacy rolling-stock contracts.`,
-    `Because aEBIT typically carries the largest STI weight (~40%) and falls below the 90% threshold gate, that component is likely to zero-out, dragging the blended payout to roughly ${expectedPayoutRatio}% of target.`,
-    `Net: STI is still expected to pay out (FCF + orders + organic sales carry the plan), but meaningfully below 100%. Probability of a >=100% target payout is estimated at ~${payoutProbability}%.`,
+    `Strengths: record EUR ${ordersActual.toFixed(1)}bn order intake, EUR 100bn+ backlog, and Free Cash Flow of ~EUR ${Math.round(fcfActual)}m - firmly inside the EUR 200-400m guided range.`,
+    `${stageLabel} read on adjusted EBIT margin lands at ~${aebitActual.toFixed(1)}%${aebitActual < aebitTarget ? `, ${(aebitTarget - aebitActual).toFixed(1)}pp short of the ~${aebitTarget.toFixed(1)}% commitment.` : `, in line with or above the ~${aebitTarget.toFixed(1)}% commitment.`}`,
+    `Because aEBIT typically carries the largest STI weight (~40%) and${aebitPayout === 0 ? " falls below the 90% threshold gate, that component is likely to zero-out, dragging" : " contributes proportionally to"} the blended payout to roughly ${expectedPayoutRatio}% of target.`,
+    `Net: STI is ${expectedPayoutRatio >= 100 ? "expected to pay out at or above target" : "still expected to pay out (FCF + orders + organic sales carry the plan), but meaningfully below 100%"}. Probability of a >=100% target payout is estimated at ~${payoutProbability}%.`,
   ].join(" ");
+
+  // Build the sources list. The audited release (if detected) is pinned
+  // to the top so reviewers see the most up-to-date document first.
+  const sources: { label: string; url: string }[] = [];
+  if (release?.found && release.classification === "annual-results-audited") {
+    sources.push({
+      label: `Alstom AUDITED FY 2025/26 - ${release.documentLabel} (${release.documentDate})`,
+      url: release.documentUrl,
+    });
+  } else if (release?.found && release.classification !== "preliminary") {
+    sources.push({
+      label: `Alstom latest filing - ${release.documentLabel} (${release.documentDate})`,
+      url: release.documentUrl,
+    });
+  }
+  if (ov.enabled && ov.releaseUrl && ov.releaseDateISO) {
+    sources.push({
+      label: `Alstom AUDITED FY 2025/26 results (override, ${ov.releaseDateISO})`,
+      url: ov.releaseUrl,
+    });
+  }
+  sources.push(
+    {
+      label: "Alstom Financial Results listing page (live)",
+      url: "https://www.alstom.com/finance/financial-results",
+    },
+    {
+      label: "Alstom press release - preliminary FY 2025/26 results (16-Apr-2026)",
+      url: "https://www.alstom.com/press-releases-news/2026/4/alstoms-preliminary-fy-202526-results",
+    },
+    {
+      label: "GlobeNewswire - Record orders, FCF within guidance, aEBIT at ~6%",
+      url: "https://www.globenewswire.com/news-release/2026/04/16/3275667/0/en/ALSTOM-S-A-Alstom-s-preliminary-FY-2025-26-results-Record-orders-Free-Cash-Flow-within-guidance-Adjusted-EBIT-at-6-Revised-preliminary-outlook-for-FY-2026-27.html",
+    },
+    {
+      label: "Alstom H1 FY 2025/26 results presentation - guidance reconfirmed (13-Nov-2025)",
+      url: "https://www.alstom.com/sites/alstom.com/files/2025/11/13/20251113_H1_Financial_Results_Presentation.pdf",
+    },
+    {
+      label: "Alstom Q3 FY 2025/26 - backlog EUR 100bn, outlook confirmed (Jan-2026)",
+      url: "https://www.alstom.com/press-releases-news/2026/1/alstoms-third-quarter-202526-record-orders-reaching-eu100bn-backlog-fy-202526-outlook-confirmed",
+    },
+  );
+
+  // Confidence ladder:
+  //  60: pure-modeled (no release info yet — e.g. quote alone)
+  //  75: preliminary press release (16-Apr-2026)
+  //  88: audited document detected but numbers not yet transcribed
+  //  95: audited override block populated with audited numerics
+  const confidenceScore =
+    auditedByOverride ? 95
+    : auditedByDoc     ? 88
+    : 75;
 
   return {
     moduleId: "alstom-sti-fy2526",
     moduleName: "Alstom STI Payout Probability - FY 2025/26",
-    fiscalYear: "FY 2025/26 (ended 31-March-2026)",
+    fiscalYear:
+      resultsStage === "audited"
+        ? "FY 2025/26 (ended 31-March-2026, AUDITED)"
+        : "FY 2025/26 (ended 31-March-2026)",
     payoutProbability,
     expectedPayoutRatio,
-    confidenceScore: 75, // preliminary, un-audited - final results in mid-May-2026
+    confidenceScore,
     timestamp: new Date().toISOString(),
     criteria,
     verdict,
     narrative,
-    sources: [
-      {
-        label: "Alstom press release - preliminary FY 2025/26 results (16-Apr-2026)",
-        url: "https://www.alstom.com/press-releases-news/2026/4/alstoms-preliminary-fy-202526-results",
-      },
-      {
-        label: "GlobeNewswire - Record orders, FCF within guidance, aEBIT at ~6%",
-        url: "https://www.globenewswire.com/news-release/2026/04/16/3275667/0/en/ALSTOM-S-A-Alstom-s-preliminary-FY-2025-26-results-Record-orders-Free-Cash-Flow-within-guidance-Adjusted-EBIT-at-6-Revised-preliminary-outlook-for-FY-2026-27.html",
-      },
-      {
-        label: "Alstom H1 FY 2025/26 results presentation - guidance reconfirmed (13-Nov-2025)",
-        url: "https://www.alstom.com/sites/alstom.com/files/2025/11/13/20251113_H1_Financial_Results_Presentation.pdf",
-      },
-      {
-        label: "Alstom Q3 FY 2025/26 - backlog EUR 100bn, outlook confirmed (Jan-2026)",
-        url: "https://www.alstom.com/press-releases-news/2026/1/alstoms-third-quarter-202526-record-orders-reaching-eu100bn-backlog-fy-202526-outlook-confirmed",
-      },
-    ],
+    sources,
     disclaimer:
       "Estimate based on the 40/30/20/10 weighting assumption (aEBIT / FCF / Orders / Sales) commonly applied to Alstom's Group STI framework. Your individual plan may use different weights, a different aEBIT threshold, an ESG/CO2 modifier, or personal-objective components. Final audited FY 2025/26 results and any Remuneration Committee discretion may shift the outcome. Consult your HR-provided STI letter for your personal weighting and targets.",
+    release,
+    resultsStage,
   };
 }
 
@@ -887,9 +1054,16 @@ export function analyzeLeverSensitivity(input: {
 /**
  * Analyze Alstom STI with live share price momentum as a 5th criterion.
  * Re-normalizes weights: 4 original criteria scaled to 90%, new criterion at 10%.
+ *
+ * Accepts an optional release-info payload from `/api/alstom/financial-results`
+ * so the analysis automatically promotes from "preliminary" to "audited"
+ * the moment Alstom publishes the audited FY 2025/26 PDF.
  */
-export function analyzeAlstomSTIWithLive(quote: AlstomQuote | null): AlstomSTIAnalysis {
-  const base = analyzeAlstomSTI();              // existing synchronous fn
+export function analyzeAlstomSTIWithLive(
+  quote: AlstomQuote | null,
+  release?: AlstomReleaseInfo,
+): AlstomSTIAnalysis {
+  const base = analyzeAlstomSTI(release);       // existing synchronous fn
   if (!quote) return base;                      // graceful degrade
 
   const sharePriceCriterion: AlstomSTICriterion = {

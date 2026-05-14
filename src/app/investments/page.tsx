@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useStore, selectTotalInvestmentValue } from "@/lib/store";
 import { thb, pct, calcAge } from "@/lib/utils";
 import type { InvestmentAccount, AccountType } from "@/lib/types";
@@ -11,6 +11,7 @@ import {
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { Plus, Edit, Trash2, PiggyBank, TrendingUp } from "lucide-react";
 import { ScenarioSimulator } from "./_components/ScenarioSimulator";
+import { PVDForecastCard } from "./_components/PVDForecastCard";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -19,25 +20,57 @@ const TYPE_LABELS: Record<AccountType, string> = {
   brokerage: "Brokerage", savings: "Savings", crypto: "Crypto", other: "Other",
 };
 
+// Default expected returns per account type — PVD is overridden by AI forecast
+const DEFAULT_RETURNS: Record<AccountType, number> = {
+  PVD: 0.04,       // placeholder; replaced by AI forecast on form open
+  RMF: 0.07,
+  SSF: 0.07,
+  SSO: 0.03,
+  brokerage: 0.08,
+  savings: 0.015,
+  crypto: 0.15,
+  other: 0.05,
+};
+
 function defaultInvestment(): Omit<InvestmentAccount, "id"> {
   return {
     name: "", accountType: "brokerage", assetDescription: "",
     marketValue: 0, currency: "THB", isTaxAdvantaged: false,
-    expectedAnnualReturn: 0.07, monthlyContribution: 0,
+    expectedAnnualReturn: DEFAULT_RETURNS["brokerage"],
+    monthlyContribution: 0,
     annualContribution: 0, owner: "Me", notes: "", isActive: true,
   };
 }
 
-function InvestmentForm({ item, onChange }: { item: Omit<InvestmentAccount, "id">; onChange: (k: string, v: any) => void }) {
+function InvestmentForm({
+  item,
+  onChange,
+  aiPVDReturn,
+}: {
+  item: Omit<InvestmentAccount, "id">;
+  onChange: (k: string, v: any) => void;
+  aiPVDReturn?: number;
+}) {
+  const isPVD = item.accountType === "PVD";
+
   return (
     <div className="grid grid-cols-2 gap-3">
       <div className="col-span-2">
         <Label>Account Name</Label>
-        <Input value={item.name} onChange={e => onChange("name", e.target.value)} className="mt-1" placeholder="e.g. KBank RMF Equity" />
+        <Input value={item.name} onChange={e => onChange("name", e.target.value)} className="mt-1" placeholder="e.g. SCB Masterplan PVD" />
       </div>
       <div>
         <Label>Account Type</Label>
-        <Select value={item.accountType} onChange={e => onChange("accountType", e.target.value)} className="mt-1">
+        <Select value={item.accountType} onChange={e => {
+          const t = e.target.value as AccountType;
+          onChange("accountType", t);
+          // Auto-populate return when switching to PVD
+          if (t === "PVD" && aiPVDReturn !== undefined) {
+            onChange("expectedAnnualReturn", aiPVDReturn);
+          } else if (t !== "PVD") {
+            onChange("expectedAnnualReturn", DEFAULT_RETURNS[t] ?? 0.05);
+          }
+        }} className="mt-1">
           {ACCOUNT_TYPES.map(t => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
         </Select>
       </div>
@@ -47,16 +80,33 @@ function InvestmentForm({ item, onChange }: { item: Omit<InvestmentAccount, "id"
       </div>
       <div className="col-span-2">
         <Label>Asset Description</Label>
-        <Input value={item.assetDescription} onChange={e => onChange("assetDescription", e.target.value)} className="mt-1" placeholder="e.g. Thai equity fund, 60/40 mix" />
+        <Input value={item.assetDescription} onChange={e => onChange("assetDescription", e.target.value)} className="mt-1"
+          placeholder={isPVD ? "PVDMPFEQ — SCB SET Index Policy" : "e.g. Thai equity fund, 60/40 mix"} />
       </div>
       <div>
         <Label>Current Market Value (฿)</Label>
         <Input type="number" value={item.marketValue} onChange={e => onChange("marketValue", Number(e.target.value))} className="mt-1" />
       </div>
       <div>
-        <Label>Expected Annual Return (%)</Label>
+        <div className="flex items-center gap-2 mb-1">
+          <Label className="mb-0">Expected Annual Return (%)</Label>
+          {isPVD && aiPVDReturn !== undefined && (
+            <span className="text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1">
+              ✦ AI: {pct(aiPVDReturn)}
+            </span>
+          )}
+        </div>
         <Input type="number" step="0.5" value={(item.expectedAnnualReturn * 100).toFixed(1)}
           onChange={e => onChange("expectedAnnualReturn", Number(e.target.value) / 100)} className="mt-1" />
+        {isPVD && aiPVDReturn !== undefined && Math.abs(item.expectedAnnualReturn - aiPVDReturn) > 0.001 && (
+          <button
+            type="button"
+            onClick={() => onChange("expectedAnnualReturn", aiPVDReturn)}
+            className="text-xs text-violet-600 dark:text-violet-400 hover:underline mt-1"
+          >
+            Reset to AI estimate ({pct(aiPVDReturn)})
+          </button>
+        )}
       </div>
       <div>
         <Label>Monthly Contribution (฿)</Label>
@@ -89,6 +139,17 @@ export default function InvestmentsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<InvestmentAccount, "id">>(defaultInvestment());
 
+  // AI PVD forecast state — loaded by PVDForecastCard, shared with the form
+  const [aiPVDReturn, setAiPVDReturn] = useState<number | undefined>(undefined);
+
+  // Apply AI forecast to all active PVD accounts
+  const handleApplyAIForecast = useCallback((estimatedReturn: number) => {
+    setAiPVDReturn(estimatedReturn);
+    investments
+      .filter(inv => inv.isActive && inv.accountType === "PVD")
+      .forEach(inv => updateInvestment(inv.id, { expectedAnnualReturn: estimatedReturn }));
+  }, [investments, updateInvestment]);
+
   const totalValue = selectTotalInvestmentValue(store);
   const taxAdvantaged = investments.filter(i => i.isActive && i.isTaxAdvantaged).reduce((s, i) => s + i.marketValue, 0);
   const monthlyContribs = investments.filter(i => i.isActive).reduce((s, i) => s + i.monthlyContribution + i.annualContribution / 12, 0);
@@ -96,7 +157,12 @@ export default function InvestmentsPage() {
     ? investments.filter(i => i.isActive).reduce((s, i) => s + i.expectedAnnualReturn * i.marketValue, 0) / totalValue
     : 0;
 
-  const openAdd = () => { setFormData(defaultInvestment()); setEditId(null); setModalOpen(true); };
+  const openAdd = () => {
+    const base = defaultInvestment();
+    setFormData(base);
+    setEditId(null);
+    setModalOpen(true);
+  };
   const openEdit = (item: InvestmentAccount) => { setFormData({ ...item }); setEditId(item.id); setModalOpen(true); };
   const handleSave = () => {
     if (!formData.name) return;
@@ -133,6 +199,12 @@ export default function InvestmentsPage() {
         title="Investments"
         subtitle="Track PVD, RMF, stocks, savings, and all investment accounts"
         actions={<Button size="sm" onClick={openAdd}><Plus size={14} /> Add Account</Button>}
+      />
+
+      {/* ── PVD AI Forecast ───────────────────────────────────────────────────── */}
+      <PVDForecastCard
+        onApply={handleApplyAIForecast}
+        hasPVDAccounts={investments.some(i => i.isActive && i.accountType === "PVD")}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -344,7 +416,7 @@ export default function InvestmentsPage() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? "Edit Investment Account" : "Add Investment Account"} className="max-w-2xl">
-        <InvestmentForm item={formData} onChange={setField} />
+        <InvestmentForm item={formData} onChange={setField} aiPVDReturn={aiPVDReturn} />
         <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!formData.name}>Save</Button>

@@ -14,6 +14,7 @@ import {
   type AnalysisResult,
   type AlstomSTIAnalysis,
   type AlstomQuote,
+  type AlstomReleaseInfo,
 } from "@/lib/engine/ai-scenarios";
 import { thb, pct } from "@/lib/utils";
 import type { Scenario, ScenarioAssumptions } from "@/lib/types";
@@ -126,11 +127,19 @@ export default function ScenariosPage() {
         ];
         setAnalyses(results);
 
-        // Fetch live Alstom quote
+        // Fetch live Alstom quote + the latest financial-results document
+        // in parallel. Each independently degrades to null on failure;
+        // the STI analyzer accepts either or both being absent.
         try {
-          const r = await fetch("/api/alstom/quote", { cache: "no-store" });
-          const q: AlstomQuote | null = r.ok ? await r.json() : null;
-          const analysis = analyzeAlstomSTIWithLive(q);
+          const [quoteRes, releaseRes] = await Promise.all([
+            fetch("/api/alstom/quote", { cache: "no-store" }).catch(() => null),
+            fetch("/api/alstom/financial-results", { cache: "no-store" }).catch(() => null),
+          ]);
+          const q: AlstomQuote | null =
+            quoteRes && quoteRes.ok ? await quoteRes.json() : null;
+          const rel: AlstomReleaseInfo | undefined =
+            releaseRes && releaseRes.ok ? await releaseRes.json() : undefined;
+          const analysis = analyzeAlstomSTIWithLive(q, rel);
           setAlstomSTI(analysis);
         } catch {
           setAlstomSTI(analyzeAlstomSTI());
@@ -780,6 +789,16 @@ function AlstomSTICard({ data }: { data: AlstomSTIAnalysis }) {
     : data.expectedPayoutRatio >= 50  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
     : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
 
+  const release = data.release;
+  const auditedBanner =
+    release?.found &&
+    release.classification === "annual-results-audited" &&
+    release.isPostPreliminary;
+  const stageSubtitle =
+    data.resultsStage === "audited"
+      ? `Audited release detected${release?.documentDate ? ` (${release.documentDate})` : ""}`
+      : "Preliminary results published 16-Apr-2026 · awaiting audited release";
+
   return (
     <Card className="border-2 border-primary/20">
       <CardHeader className="pb-3">
@@ -790,7 +809,7 @@ function AlstomSTICard({ data }: { data: AlstomSTIAnalysis }) {
           <div className="flex-1 min-w-0">
             <CardTitle className="text-base">{data.moduleName}</CardTitle>
             <p className="text-xs text-muted-foreground mt-0.5">
-              {data.fiscalYear} · Preliminary results published 16-Apr-2026
+              {data.fiscalYear} · {stageSubtitle}
             </p>
           </div>
           <span className={`text-[10px] px-2 py-1 rounded-full font-medium ${badgeColor}`}>
@@ -800,6 +819,30 @@ function AlstomSTICard({ data }: { data: AlstomSTIAnalysis }) {
       </CardHeader>
 
       <CardContent className="space-y-5">
+        {/* New-release banner — fires only when /api/alstom/financial-results
+            confirms a post-preliminary audited document is live. */}
+        {auditedBanner && release && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs flex items-start gap-2">
+            <CheckCircle size={14} className="text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold text-emerald-700 dark:text-emerald-300">
+                New audited FY 2025/26 document detected
+              </div>
+              <div className="mt-0.5 text-muted-foreground">
+                {release.documentLabel} · {release.documentDate}
+              </div>
+            </div>
+            <a
+              href={release.documentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300 hover:underline"
+            >
+              <ExternalLink size={11} /> Open PDF
+            </a>
+          </div>
+        )}
+
         {/* Headline numbers */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <div className="rounded-lg border border-border p-3">

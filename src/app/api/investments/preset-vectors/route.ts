@@ -9,9 +9,13 @@
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { PVDMPFEQ, fundSummaryForPrompt } from "@/lib/fund-registry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
+
+// Inject PVDMPFEQ fund context so AI shifts for PVD are anchored to real data
+const PVD_CONTEXT = fundSummaryForPrompt(PVDMPFEQ);
 
 const SYSTEM = `You are a Thai investment strategist. Given today's date and global/Thai
 macro context, generate realistic return-shift vectors for Bull, Bear, and Recession scenarios.
@@ -20,9 +24,12 @@ Shifts represent the DELTA added to each account type's BASE expected return (e.
 means "add 3% to whatever the user set"). Use Thai market history as anchor:
   - SET total return: ~6–8% long-run
   - Thai bonds/savings: ~1–2%
-  - PVD conservative mix: ~3–5%
+  - PVD (specifically PVDMPFEQ, SET-index tracker): see fund data below
   - RMF/SSF equity funds: ~5–10%
   - Crypto: highly volatile
+
+PVDMPFEQ fund reference data (use when calibrating PVD shifts):
+${PVD_CONTEXT}
 
 Return STRICT JSON — no prose, no fences:
 {
