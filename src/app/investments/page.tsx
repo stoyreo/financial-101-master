@@ -12,6 +12,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis
 import { Plus, Edit, Trash2, PiggyBank, TrendingUp } from "lucide-react";
 import { ScenarioSimulator } from "./_components/ScenarioSimulator";
 import { PVDForecastCard } from "./_components/PVDForecastCard";
+import { SCBGOLDHRMFForecastCard } from "./_components/SCBGOLDHRMFForecastCard";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -46,12 +47,15 @@ function InvestmentForm({
   item,
   onChange,
   aiPVDReturn,
+  aiSCBGoldReturn,
 }: {
   item: Omit<InvestmentAccount, "id">;
   onChange: (k: string, v: any) => void;
   aiPVDReturn?: number;
+  aiSCBGoldReturn?: number;
 }) {
   const isPVD = item.accountType === "PVD";
+  const isGoldRMF = item.accountType === "RMF" && /gold|SCBGOLDHRMF/i.test(item.assetDescription);
 
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -64,10 +68,12 @@ function InvestmentForm({
         <Select value={item.accountType} onChange={e => {
           const t = e.target.value as AccountType;
           onChange("accountType", t);
-          // Auto-populate return when switching to PVD
+          // Auto-populate return when switching to PVD or RMF (for gold)
           if (t === "PVD" && aiPVDReturn !== undefined) {
             onChange("expectedAnnualReturn", aiPVDReturn);
-          } else if (t !== "PVD") {
+          } else if (t === "RMF" && /gold|SCBGOLDHRMF/i.test(item.assetDescription) && aiSCBGoldReturn !== undefined) {
+            onChange("expectedAnnualReturn", aiSCBGoldReturn);
+          } else {
             onChange("expectedAnnualReturn", DEFAULT_RETURNS[t] ?? 0.05);
           }
         }} className="mt-1">
@@ -80,7 +86,14 @@ function InvestmentForm({
       </div>
       <div className="col-span-2">
         <Label>Asset Description</Label>
-        <Input value={item.assetDescription} onChange={e => onChange("assetDescription", e.target.value)} className="mt-1"
+        <Input value={item.assetDescription} onChange={e => {
+          const newDesc = e.target.value;
+          onChange("assetDescription", newDesc);
+          // If RMF type and description changes to include gold, apply gold forecast if available
+          if (item.accountType === "RMF" && /gold|SCBGOLDHRMF/i.test(newDesc) && aiSCBGoldReturn !== undefined) {
+            onChange("expectedAnnualReturn", aiSCBGoldReturn);
+          }
+        }} className="mt-1"
           placeholder={isPVD ? "PVDMPFEQ — SCB SET Index Policy" : "e.g. Thai equity fund, 60/40 mix"} />
       </div>
       <div>
@@ -95,6 +108,11 @@ function InvestmentForm({
               ✦ AI: {pct(aiPVDReturn)}
             </span>
           )}
+          {isGoldRMF && aiSCBGoldReturn !== undefined && (
+            <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
+              ✦ AI: {pct(aiSCBGoldReturn)}
+            </span>
+          )}
         </div>
         <Input type="number" step="0.5" value={(item.expectedAnnualReturn * 100).toFixed(1)}
           onChange={e => onChange("expectedAnnualReturn", Number(e.target.value) / 100)} className="mt-1" />
@@ -105,6 +123,15 @@ function InvestmentForm({
             className="text-xs text-violet-600 dark:text-violet-400 hover:underline mt-1"
           >
             Reset to AI estimate ({pct(aiPVDReturn)})
+          </button>
+        )}
+        {isGoldRMF && aiSCBGoldReturn !== undefined && Math.abs(item.expectedAnnualReturn - aiSCBGoldReturn) > 0.001 && (
+          <button
+            type="button"
+            onClick={() => onChange("expectedAnnualReturn", aiSCBGoldReturn)}
+            className="text-xs text-yellow-600 dark:text-yellow-400 hover:underline mt-1"
+          >
+            Reset to AI estimate ({pct(aiSCBGoldReturn)})
           </button>
         )}
       </div>
@@ -139,14 +166,23 @@ export default function InvestmentsPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Omit<InvestmentAccount, "id">>(defaultInvestment());
 
-  // AI PVD forecast state — loaded by PVDForecastCard, shared with the form
+  // AI forecast states — loaded by forecast cards, shared with the form
   const [aiPVDReturn, setAiPVDReturn] = useState<number | undefined>(undefined);
+  const [aiSCBGoldReturn, setAiSCBGoldReturn] = useState<number | undefined>(undefined);
 
-  // Apply AI forecast to all active PVD accounts
-  const handleApplyAIForecast = useCallback((estimatedReturn: number) => {
+  // Apply AI PVD forecast to all active PVD accounts
+  const handleApplyAIPVDForecast = useCallback((estimatedReturn: number) => {
     setAiPVDReturn(estimatedReturn);
     investments
       .filter(inv => inv.isActive && inv.accountType === "PVD")
+      .forEach(inv => updateInvestment(inv.id, { expectedAnnualReturn: estimatedReturn }));
+  }, [investments, updateInvestment]);
+
+  // Apply AI gold forecast to all active RMF accounts with gold in description
+  const handleApplyAIGoldForecast = useCallback((estimatedReturn: number) => {
+    setAiSCBGoldReturn(estimatedReturn);
+    investments
+      .filter(inv => inv.isActive && inv.accountType === "RMF" && /gold|SCBGOLDHRMF/i.test(inv.assetDescription))
       .forEach(inv => updateInvestment(inv.id, { expectedAnnualReturn: estimatedReturn }));
   }, [investments, updateInvestment]);
 
@@ -203,8 +239,14 @@ export default function InvestmentsPage() {
 
       {/* ── PVD AI Forecast ───────────────────────────────────────────────────── */}
       <PVDForecastCard
-        onApply={handleApplyAIForecast}
+        onApply={handleApplyAIPVDForecast}
         hasPVDAccounts={investments.some(i => i.isActive && i.accountType === "PVD")}
+      />
+
+          {/* ── Gold RMF AI Forecast ──────────────────────────────────────────────── */}
+      <SCBGOLDHRMFForecastCard
+        onApply={handleApplyAIGoldForecast}
+        hasMatchingAccounts={investments.some(i => i.isActive && i.accountType === "RMF" && /gold|SCBGOLDHRMF/i.test(i.assetDescription))}
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -416,7 +458,7 @@ export default function InvestmentsPage() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? "Edit Investment Account" : "Add Investment Account"} className="max-w-2xl">
-        <InvestmentForm item={formData} onChange={setField} aiPVDReturn={aiPVDReturn} />
+        <InvestmentForm item={formData} onChange={setField} aiPVDReturn={aiPVDReturn} aiSCBGoldReturn={aiSCBGoldReturn} />
         <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-border">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} disabled={!formData.name}>Save</Button>

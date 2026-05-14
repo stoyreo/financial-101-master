@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [ready, setReady] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLoading, setMagicLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -25,7 +27,7 @@ export default function LoginPage() {
     })();
   }, [router]);
 
-  const handleOAuth = async (provider: "google" | "apple") => {
+  const handleOAuth = async (provider: "google") => {
     setState("loading");
     setErrorMsg("");
     try {
@@ -33,8 +35,8 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+          redirectTo: `${window.location.origin}/auth/callback?next=/`,
+          queryParams: { prompt: "select_account" },
         },
       });
       if (error) {
@@ -44,6 +46,38 @@ export default function LoginPage() {
     } catch (err) {
       setErrorMsg("OAuth sign-in failed. Try email/password.");
       setState("error");
+    }
+  };
+
+  const handleMagicLink = async () => {
+    if (!email.trim()) {
+      setErrorMsg("Enter your email above, then tap Send magic link.");
+      setState("error");
+      return;
+    }
+    setMagicLoading(true);
+    setErrorMsg("");
+    setMagicLinkSent(false);
+    try {
+      const supabase = getSupabaseBrowser();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+          shouldCreateUser: true,
+        },
+      });
+      if (error) {
+        setErrorMsg(error.message || "Could not send magic link.");
+        setState("error");
+      } else {
+        setMagicLinkSent(true);
+      }
+    } catch (err) {
+      setErrorMsg("Could not send magic link. Try again or use a password.");
+      setState("error");
+    } finally {
+      setMagicLoading(false);
     }
   };
 
@@ -136,6 +170,7 @@ export default function LoginPage() {
                 onChange={e => {
                   setEmail(e.target.value);
                   setErrorMsg("");
+                  setMagicLinkSent(false);
                   if (state === "error") setState("idle");
                 }}
                 required
@@ -168,9 +203,15 @@ export default function LoginPage() {
               />
             </div>
 
-            {state === "error" && (
+            {state === "error" && errorMsg && (
               <div className="text-xs text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 rounded-lg px-3 py-2">
                 {errorMsg}
+              </div>
+            )}
+
+            {magicLinkSent && (
+              <div className="text-xs text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400 rounded-lg px-3 py-2">
+                Magic link sent to <strong>{email.trim()}</strong>. Check your inbox and tap the link to sign in.
               </div>
             )}
 
@@ -183,6 +224,22 @@ export default function LoginPage() {
                 shadow-lg shadow-primary/20"
             >
               {state === "loading" ? "Signing in..." : "Sign In"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleMagicLink}
+              disabled={magicLoading || state === "loading" || !email.trim()}
+              className="w-full h-11 rounded-xl border border-primary/40 bg-primary/5
+                         hover:bg-primary/10 text-primary text-sm font-medium
+                         flex items-center justify-center gap-2 transition-all
+                         disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+              </svg>
+              {magicLoading ? "Sending magic link..." : "Email me a magic link"}
             </button>
           </form>
 
@@ -212,21 +269,6 @@ export default function LoginPage() {
             Continue with Google
           </button>
 
-          {process.env.NEXT_PUBLIC_APPLE_AUTH_ENABLED === "true" && (
-            <button
-              type="button"
-              onClick={() => handleOAuth("apple")}
-              disabled={state === "loading"}
-              className="w-full h-11 rounded-xl bg-black text-white text-sm font-medium
-                         flex items-center justify-center gap-2 hover:bg-zinc-900 transition-all
-                         disabled:opacity-50"
-            >
-              <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-hidden="true">
-                <path d="M16.365 1.43c0 1.14-.46 2.23-1.21 3.04-.81.86-2.13 1.53-3.22 1.45-.13-1.1.43-2.25 1.16-3.05.82-.89 2.22-1.55 3.27-1.44ZM20.5 17.41c-.55 1.27-.81 1.84-1.51 2.96-.99 1.55-2.39 3.49-4.12 3.5-1.54.02-1.94-1-4.04-.99-2.1.01-2.54 1-4.08.98-1.74-.02-3.06-1.77-4.05-3.32C0.32 16.09-.07 11.4 1.62 8.91 2.83 7.13 4.74 6.1 6.54 6.1c1.83 0 2.98 1 4.5 1 1.47 0 2.36-1 4.49-1 1.6 0 3.3.87 4.51 2.39-3.97 2.18-3.32 7.85-1.04 8.92Z"/>
-              </svg>
-              Continue with Apple
-            </button>
-          )}
         </div>
       </div>
     </div>

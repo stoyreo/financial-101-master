@@ -22,6 +22,12 @@
  *   methodology: string,           // brief methodology note
  *   vsOldDefault: string,          // "The previous 4% default was …"
  *   source: "ai" | "fallback"
+ *   usage: {
+ *     inputTokens: number | null;
+ *     outputTokens: number | null;
+ *     remainingTokens: number | null;   // anthropic-ratelimit-tokens-remaining
+ *     tokenLimit: number | null;        // anthropic-ratelimit-tokens-limit
+ *   }
  * }
  */
 
@@ -58,6 +64,12 @@ const FALLBACK: Record<string, unknown> = {
     "The previous 4% default was conservative relative to long-run Thai equity history. " +
     "For a 20+ year retirement horizon, 5–6% is a more balanced estimate, though 4% remains appropriate for near-retirement or risk-averse members.",
   source: "fallback",
+  usage: {
+    inputTokens: null,
+    outputTokens: null,
+    remainingTokens: null,
+    tokenLimit: null,
+  },
 };
 
 // ── System prompt ─────────────────────────────────────────────────────────────
@@ -115,12 +127,27 @@ Return strict JSON only — no prose, no markdown.`;
 
     const client = new Anthropic({ apiKey });
 
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 800,
-      system: SYSTEM,
-      messages: [{ role: "user", content: userPrompt }],
-    });
+    const { data: msg, response } = await client.messages
+      .create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 800,
+        system: SYSTEM,
+        messages: [{ role: "user", content: userPrompt }],
+      })
+      .withResponse();
+
+    // Extract usage from response
+    const inputTokens = msg.usage.input_tokens ?? null;
+    const outputTokens = msg.usage.output_tokens ?? null;
+
+    // Try to extract rate-limit headers
+    let remainingTokens: number | null = null;
+    let tokenLimit: number | null = null;
+    const headers = response.headers;
+    const remaining = headers.get("anthropic-ratelimit-tokens-remaining");
+    const limit = headers.get("anthropic-ratelimit-tokens-limit");
+    if (remaining) remainingTokens = parseInt(remaining, 10);
+    if (limit) tokenLimit = parseInt(limit, 10);
 
     const rawText = msg.content
       .filter(b => b.type === "text")
@@ -134,7 +161,11 @@ Return strict JSON only — no prose, no markdown.`;
       parsed = JSON.parse(jsonStr);
     } catch {
       console.error("pvd-forecast: JSON parse failed, using fallback. Raw:", rawText.slice(0, 300));
-      return NextResponse.json({ ...FALLBACK, source: "fallback_parse_error" });
+      return NextResponse.json({
+        ...FALLBACK,
+        source: "fallback_parse_error",
+        usage: { inputTokens, outputTokens, remainingTokens, tokenLimit },
+      });
     }
 
     // Validate critical numeric fields are reasonable decimals
@@ -146,13 +177,25 @@ Return strict JSON only — no prose, no markdown.`;
       isNaN(est) || est < -0.10 || est > 0.25 ||
       isNaN(low) || isNaN(high)
     ) {
-      return NextResponse.json({ ...FALLBACK, source: "fallback_invalid_values" });
+      return NextResponse.json({
+        ...FALLBACK,
+        source: "fallback_invalid_values",
+        usage: { inputTokens, outputTokens, remainingTokens, tokenLimit },
+      });
     }
 
-    return NextResponse.json({ ...parsed, source: "ai" });
+    return NextResponse.json({
+      ...parsed,
+      source: "ai",
+      usage: { inputTokens, outputTokens, remainingTokens, tokenLimit },
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("pvd-forecast error:", msg);
-    return NextResponse.json({ ...FALLBACK, source: "fallback_error" });
+    return NextResponse.json({
+      ...FALLBACK,
+      source: "fallback_error",
+      usage: { inputTokens: null, outputTokens: null, remainingTokens: null, tokenLimit: null },
+    });
   }
 }

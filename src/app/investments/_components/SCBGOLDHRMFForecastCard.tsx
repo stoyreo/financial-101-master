@@ -7,13 +7,13 @@ import {
 import { Sparkles, Loader2, RefreshCw, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from "@/components/ui";
 import { cn, pct } from "@/lib/utils";
-import { PVDMPFEQ } from "@/lib/fund-registry";
+import { SCBGOLDHRMF } from "@/lib/fund-registry";
 import { ForecastCollapse } from "./ForecastCollapse";
 import { TokenUsageStamp } from "./TokenUsageStamp";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface PVDForecast {
+interface SCBGoldForecast {
   asOf: string;
   fundCode: string;
   estimatedReturn: number;
@@ -35,14 +35,14 @@ interface PVDForecast {
 interface Props {
   /** Called when user clicks "Apply" — passes the AI estimated return */
   onApply?: (estimatedReturn: number) => void;
-  /** Whether any PVD accounts exist in the portfolio */
-  hasPVDAccounts?: boolean;
+  /** Whether any matching gold RMF accounts exist in the portfolio */
+  hasMatchingAccounts?: boolean;
 }
 
 // ── Cache key (sessionStorage, cleared on logout) ─────────────────────────────
-const CACHE_KEY = "f101:pvd-forecast:v1";
+const CACHE_KEY = "f101:scbgoldhrmf-forecast:v1";
 
-function readCache(): { asOf: string; data: PVDForecast } | null {
+function readCache(): { asOf: string; data: SCBGoldForecast } | null {
   try {
     const raw = sessionStorage.getItem(CACHE_KEY);
     if (!raw) return null;
@@ -55,7 +55,7 @@ function readCache(): { asOf: string; data: PVDForecast } | null {
   }
 }
 
-function writeCache(data: PVDForecast): void {
+function writeCache(data: SCBGoldForecast): void {
   try {
     sessionStorage.setItem(
       CACHE_KEY,
@@ -66,7 +66,7 @@ function writeCache(data: PVDForecast): void {
 
 // ── Historical chart data ─────────────────────────────────────────────────────
 
-const CHART_DATA = PVDMPFEQ.annualReturns.map(r => ({
+const CHART_DATA = SCBGOLDHRMF.annualReturns.map(r => ({
   year: String(r.yearCE),
   fund: r.fund,
   benchmark: r.benchmark,
@@ -100,9 +100,9 @@ function ConfidenceBand({ low, mid, high }: { low: number; mid: number; high: nu
         <span className="font-semibold text-foreground">Best estimate {pct(mid)}</span>
         <span>Optimistic {pct(high)}</span>
       </div>
-      <div className="relative h-3 rounded-full bg-gradient-to-r from-amber-200 via-emerald-300 to-emerald-500 dark:from-amber-900/60 dark:via-emerald-700/60 dark:to-emerald-500/70">
+      <div className="relative h-3 rounded-full bg-gradient-to-r from-amber-200 via-yellow-300 to-yellow-500 dark:from-amber-900/60 dark:via-yellow-700/60 dark:to-yellow-500/70">
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-emerald-600 shadow-md"
+          className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white border-2 border-yellow-600 shadow-md"
           style={{ left: `calc(${midPct}% - 8px)` }}
           title={`Best estimate: ${pct(mid)}`}
         />
@@ -113,8 +113,8 @@ function ConfidenceBand({ low, mid, high }: { low: number; mid: number; high: nu
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
-  const [forecast, setForecast] = useState<PVDForecast | null>(null);
+export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }: Props) {
+  const [forecast, setForecast] = useState<SCBGoldForecast | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [applied, setApplied] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -134,9 +134,9 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
 
     setStatus("loading");
 
-    fetch("/api/investments/pvd-forecast", { method: "POST" })
+    fetch("/api/investments/scbgoldhrmf-forecast", { method: "POST" })
       .then(r => r.json())
-      .then((data: PVDForecast) => {
+      .then((data: SCBGoldForecast) => {
         setForecast(data);
         setStatus("done");
         writeCache(data);
@@ -154,9 +154,9 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
     setTimeout(() => {
       fetchedRef.current = false;
       setStatus("loading");
-      fetch("/api/investments/pvd-forecast", { method: "POST" })
+      fetch("/api/investments/scbgoldhrmf-forecast", { method: "POST" })
         .then(r => r.json())
-        .then((data: PVDForecast) => {
+        .then((data: SCBGoldForecast) => {
           setForecast(data);
           setStatus("done");
           writeCache(data);
@@ -173,16 +173,16 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
   };
 
   return (
-    <Card className="mb-6 border-violet-200 dark:border-violet-800">
+    <Card className="mb-6 border-yellow-200 dark:border-yellow-800">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-violet-500" />
+            <Sparkles size={16} className="text-yellow-600 dark:text-yellow-400" />
             <CardTitle className="text-sm">
-              AI Return Forecast — PVDMPFEQ
+              AI Return Forecast — SCBGOLDHRMF
             </CardTitle>
             <Badge variant="outline" className="text-xs font-mono">
-              PVDMPFEQ
+              SCBGOLDHRMF
             </Badge>
             {forecast?.source === "ai" && (
               <Badge variant="success" className="text-xs">AI-powered</Badge>
@@ -208,7 +208,7 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {PVDMPFEQ.nameTH} — {PVDMPFEQ.manager}
+          {SCBGOLDHRMF.nameTH} — {SCBGOLDHRMF.manager}
         </p>
       </CardHeader>
 
@@ -217,8 +217,8 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
         {/* Loading state */}
         {status === "loading" && (
           <div className="flex items-center gap-2.5 py-6 justify-center text-muted-foreground text-sm">
-            <Loader2 size={16} className="animate-spin text-violet-500" />
-            <span>Analysing 11 years of PVDMPFEQ returns…</span>
+            <Loader2 size={16} className="animate-spin text-yellow-600" />
+            <span>Analysing 11 years of SCBGOLDHRMF returns…</span>
           </div>
         )}
 
@@ -233,7 +233,7 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
         {/* Done state */}
         {status === "done" && forecast && (
           <ForecastCollapse
-            storageId="f101:pvd-forecast:collapsed"
+            storageId="f101:scbgoldhrmf-forecast:expanded"
             defaultExpanded={false}
             summary={
               <div className="flex items-center justify-between gap-4">
@@ -241,7 +241,7 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                   <div className="text-xs font-medium text-muted-foreground uppercase mb-1">
                     AI Best-Estimate
                   </div>
-                  <div className="text-3xl font-bold text-violet-700 dark:text-violet-400 tabular-nums">
+                  <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 tabular-nums">
                     {pct(forecast.estimatedReturn)}
                   </div>
                 </div>
@@ -253,13 +253,13 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
             children={
               <>
                 {/* ── Main return estimate ────────────────────────────────────── */}
-                <div className="rounded-xl bg-violet-50 dark:bg-violet-900/10 border border-violet-100 dark:border-violet-800/50 p-4">
+                <div className="rounded-xl bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-100 dark:border-yellow-800/50 p-4">
                   <div className="flex items-start justify-between gap-4 flex-wrap">
                     <div>
                       <div className="text-xs font-medium text-muted-foreground uppercase mb-1">
                         AI Best-Estimate Annual Return
                       </div>
-                      <div className="text-4xl font-bold text-violet-700 dark:text-violet-400 tabular-nums">
+                      <div className="text-4xl font-bold text-yellow-600 dark:text-yellow-400 tabular-nums">
                         {pct(forecast.estimatedReturn)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
@@ -267,9 +267,9 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                       </div>
                     </div>
                     <div className="flex gap-6 text-center">
-                      <ReturnBadge value={-7.88} label="Last year (2025)" />
+                      <ReturnBadge value={28.5} label="Last year (2025)" />
                       <ReturnBadge
-                        value={PVDMPFEQ.annualReturns.reduce((s, r) => s + r.fund, 0) / PVDMPFEQ.annualReturns.length}
+                        value={SCBGOLDHRMF.annualReturns.reduce((s, r) => s + r.fund, 0) / SCBGOLDHRMF.annualReturns.length}
                         label="11yr avg"
                       />
                     </div>
@@ -298,7 +298,7 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                   <ul className="space-y-1.5">
                     {forecast.keyFactors.map((factor, i) => (
                       <li key={i} className="flex items-start gap-2 text-sm">
-                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-1.5 shrink-0" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-1.5 shrink-0" />
                         <span>{factor}</span>
                       </li>
                     ))}
@@ -321,19 +321,19 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                         <BarChart data={CHART_DATA} barGap={2} barSize={14}>
                           <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                           <XAxis dataKey="year" tick={{ fontSize: 10 }} />
-                          <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[-20, 25]} />
+                          <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[-20, 35]} />
                           <Tooltip
                             formatter={(v: number, name: string) => [
                               `${v > 0 ? "+" : ""}${v.toFixed(2)}%`,
-                              name === "fund" ? "PVDMPFEQ" : "SET TRI",
+                              name === "fund" ? "Gold (THB-hedged)" : "Benchmark",
                             ]}
                           />
                           <ReferenceLine y={0} stroke="#888" strokeWidth={1} />
                           <ReferenceLine
                             y={forecast.estimatedReturn * 100}
-                            stroke="#7c3aed"
+                            stroke="#eab308"
                             strokeDasharray="4 2"
-                            label={{ value: "AI est.", position: "insideTopRight", fontSize: 10, fill: "#7c3aed" }}
+                            label={{ value: "AI est.", position: "insideTopRight", fontSize: 10, fill: "#eab308" }}
                           />
                           <Bar dataKey="fund" name="fund" radius={[2, 2, 0, 0]}>
                             {CHART_DATA.map((d, i) => (
@@ -353,11 +353,11 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                           <span className="w-2.5 h-2.5 rounded-sm bg-red-500 inline-block" /> Negative year
                         </span>
                         <span className="flex items-center gap-1">
-                          <span className="w-8 border-t-2 border-dashed border-violet-500 inline-block" /> AI estimate
+                          <span className="w-8 border-t-2 border-dashed border-yellow-500 inline-block" /> AI estimate
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-2">
-                        Std dev: {PVDMPFEQ.stdDevPct}% p.a. · Tracking error: {PVDMPFEQ.trackingErrorPct}% p.a. · TER: {PVDMPFEQ.totalExpenseRatioPct}% p.a.
+                        Std dev: {SCBGOLDHRMF.stdDevPct}% p.a. · Tracking error: {SCBGOLDHRMF.trackingErrorPct}% p.a. · TER: {SCBGOLDHRMF.totalExpenseRatioPct}% p.a.
                       </p>
                     </div>
                   )}
@@ -394,14 +394,14 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                       ) : (
                         <>
                           <Sparkles size={13} />
-                          {hasPVDAccounts
-                            ? `Apply ${pct(forecast.estimatedReturn)} to PVD accounts`
-                            : `Use ${pct(forecast.estimatedReturn)} as default for new PVD`}
+                          {hasMatchingAccounts
+                            ? `Apply ${pct(forecast.estimatedReturn)} to gold RMF accounts`
+                            : `Use ${pct(forecast.estimatedReturn)} as default for new gold RMF`}
                         </>
                       )}
                     </Button>
                     <span className="text-xs text-muted-foreground">
-                      Updates expected return on all active PVD accounts
+                      Updates expected return on all active gold RMF accounts
                     </span>
                   </div>
                 )}
