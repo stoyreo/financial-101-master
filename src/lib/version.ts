@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.4.0";
-export const BUILD_DATE = "2026-05-12";
+export const APP_VERSION = "3.5.0";
+export const BUILD_DATE = "2026-05-18";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.5.0",
+    date: "2026-05-18",
+    changes: [
+      "Added Google Sign-In as a login option on both the login and signup pages",
+      "Fixed magic link and Google OAuth session initialization — users no longer get bounced back to login after signing in",
+      "New /auth/session-init bridge page properly creates the app session after OAuth redirect",
+      "Updated signup page branding to 'Financial 101 Master crafted by Toy'",
+    ],
+  },
   {
     version: "3.4.0",
     date: "2026-05-12",
