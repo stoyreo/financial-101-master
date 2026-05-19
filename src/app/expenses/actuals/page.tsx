@@ -259,7 +259,19 @@ export default function ActualsPage() {
       setLineSyncMsg(
         `Synced ${total} transactions from LINE — ${added} new, ${duplicates} already on file.`
       );
-      if (added > 0) setShowLinePanel(false);
+
+      if (added > 0) {
+        // Auto-switch to the most recent month that has new LINE data
+        const syncedMonths = fetched
+          .map((t: any) => t.billingMonth as string)
+          .filter(Boolean)
+          .sort()
+          .reverse();
+        if (syncedMonths[0] && syncedMonths[0] !== selectedMonth) {
+          setSelectedMonth(syncedMonths[0]);
+        }
+        setShowLinePanel(false);
+      }
     } catch (e: any) {
       setLineSyncMsg(`Error: ${e.message ?? "sync failed"}`);
     } finally {
