@@ -90,6 +90,34 @@ export default function ActualsPage() {
   const [lineSyncMsg, setLineSyncMsg] = useState<string | null>(null);
   const [showLinePanel, setShowLinePanel] = useState(false);
 
+  // ── Persist LINE UID to localStorage forever (backup beyond Zustand) ──────
+  // Ensures the credential survives store resets, cache clears, etc.
+  useEffect(() => {
+    if (lineUserId) {
+      localStorage.setItem("line_uid_persistent", lineUserId);
+    }
+  }, [lineUserId]);
+
+  // On mount: restore UID from localStorage if the Zustand store is empty
+  useEffect(() => {
+    if (!lineUserId) {
+      const stored = localStorage.getItem("line_uid_persistent");
+      if (stored) setLineUserId(stored);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-start LINE sync when page opens and LINE is connected ─────────────
+  // Fires on mount (if already connected) or right after localStorage restore
+  const autoSyncedRef = useRef(false);
+  useEffect(() => {
+    if (lineUserId && !autoSyncedRef.current) {
+      autoSyncedRef.current = true;
+      setShowLinePanel(true);
+      // Small delay so the panel renders before the sync request fires
+      setTimeout(handleLineSync, 400);
+    }
+  }, [lineUserId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Capture LINE UID from the OAuth callback redirect (?line_uid=Uxx…)
   // and persist it to the store. Also auto-open the sync panel.
   useEffect(() => {
