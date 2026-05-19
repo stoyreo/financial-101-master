@@ -11,7 +11,8 @@
  * duplicates. ALL prior statements are kept for trend analysis.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   useStore,
@@ -21,7 +22,7 @@ import { thb } from "@/lib/utils";
 import { getCurrentAccount } from "@/lib/accounts";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Badge,
-  StatCard, PageHeader, EmptyState, Progress, Select, Input,
+  StatCard, PageHeader, EmptyState, Progress, Select,
 } from "@/components/ui";
 import {
   Upload, AlertTriangle, TrendingDown, Sparkles, FileText, Trash2,
@@ -56,6 +57,9 @@ export default function ActualsPage() {
     lineUserId, setLineUserId, lineLastSyncedAt, setLineLastSyncedAt,
   } = store;
 
+  // ── Read LINE UID from OAuth callback (?line_uid=Uxx…) ─────────────────
+  const searchParams = useSearchParams();
+
   // ── Account isolation ─────────────────────────────────
   // CRITICAL: always filter by activeAccountId so no account's data leaks
   // into another account's view. The store holds ALL accounts' transactions
@@ -82,10 +86,29 @@ export default function ActualsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ── LINE sync state ────────────────────────────────────
-  const [lineUidInput, setLineUidInput] = useState(lineUserId ?? "");
   const [lineSyncing, setLineSyncing] = useState(false);
   const [lineSyncMsg, setLineSyncMsg] = useState<string | null>(null);
   const [showLinePanel, setShowLinePanel] = useState(false);
+
+  // Capture LINE UID from the OAuth callback redirect (?line_uid=Uxx…)
+  // and persist it to the store. Also auto-open the sync panel.
+  useEffect(() => {
+    const uid = searchParams.get("line_uid");
+    const lineErr = searchParams.get("line_error");
+    if (uid) {
+      setLineUserId(uid);
+      setShowLinePanel(true);
+      // Clean the query param from the URL without a history entry
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+    if (lineErr) {
+      setLineSyncMsg(`LINE connection failed (${lineErr}). Please try again.`);
+      setShowLinePanel(true);
+      const clean = window.location.pathname;
+      window.history.replaceState({}, "", clean);
+    }
+  }, [searchParams, setLineUserId]);
 
   // Bucket by credit-card billing month (derived from STATEMENT DATE on the
   // PDF), so a statement that covers e.g. 23 Mar → 22 Apr is one "April"
@@ -185,17 +208,14 @@ export default function ActualsPage() {
 
   // ── LINE sync handler ────────────────────────────────
   async function handleLineSync() {
-    const uid = lineUidInput.trim();
-    if (!uid) { setLineSyncMsg("Enter your LINE UID first."); return; }
+    if (!lineUserId) { setLineSyncMsg("Connect with LINE first."); return; }
     setLineSyncing(true);
     setLineSyncMsg(null);
-    // Persist the UID for next time
-    setLineUserId(uid);
     try {
       const res = await fetch("/api/line/fetch-transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lineUserId: uid, activeAccountId }),
+        body: JSON.stringify({ lineUserId, activeAccountId }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message ?? json.error ?? "Sync failed");
@@ -230,6 +250,14 @@ export default function ActualsPage() {
     } finally {
       setLineSyncing(false);
     }
+  }
+
+  // ── Build LINE OAuth URL for sync-mode connect ───────────────────────────
+  function buildLineConnectUrl() {
+    const clientId = process.env.NEXT_PUBLIC_LINE_CLIENT_ID;
+    if (!clientId || typeof window === "undefined") return "#";
+    const redirectUri = encodeURIComponent(`${window.location.origin}/auth/line/callback`);
+    return `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=sync&scope=profile%20openid`;
   }
 
   // ── Empty state: no imports yet ──────────────────────
@@ -269,45 +297,36 @@ export default function ActualsPage() {
               <p className="text-xs text-muted-foreground text-center mb-3">
                 Or pull transactions directly from the LINE Expense Tracker
               </p>
-              {lineUserId ? (
-                <div className="flex items-center justify-center gap-3">
-                  <span className="text-xs text-muted-foreground">
-                    Connected as{" "}
-                    <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                      {lineUserId.slice(0, 8)}…
-                    </code>
-                  </span>
-                  <Button
-                    size="sm"
-                    onClick={handleLineSync}
-                    disabled={lineSyncing}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
-                  >
-                    <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
-                    {lineSyncing ? "Syncing…" : "Sync LINE"}
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex gap-2 max-w-sm mx-auto">
-                  <Input
-                    value={lineUidInput}
-                    onChange={e => setLineUidInput(e.target.value)}
-                    placeholder="LINE UID — Uxxxxxxx…"
-                    className="font-mono text-xs h-9"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleLineSync}
-                    disabled={lineSyncing || !lineUidInput.trim()}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
-                  >
-                    <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
-                    {lineSyncing ? "Syncing…" : "Sync LINE"}
-                  </Button>
-                </div>
-              )}
+              <div className="flex items-center justify-center gap-3">
+                {lineUserId ? (
+                  <>
+                    <span className="text-xs text-muted-foreground">
+                      Connected as{" "}
+                      <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                        {lineUserId.slice(0, 8)}…
+                      </code>
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={handleLineSync}
+                      disabled={lineSyncing}
+                      className="bg-cyan-600 hover:bg-cyan-700 text-white"
+                    >
+                      <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
+                      {lineSyncing ? "Syncing…" : "Sync LINE"}
+                    </Button>
+                  </>
+                ) : (
+                  <a href={buildLineConnectUrl()} className="inline-flex">
+                    <Button size="sm" className="bg-[#06C755] hover:bg-[#05a847] text-white">
+                      <Smartphone size={13} />
+                      Connect with LINE
+                    </Button>
+                  </a>
+                )}
+              </div>
               {lineSyncMsg && (
-                <p className={`mt-2 text-xs text-center ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
+                <p className={`mt-2 text-xs text-center ${lineSyncMsg.startsWith("LINE connection failed") ? "text-red-400" : "text-cyan-400"}`}>
                   {lineSyncMsg}
                 </p>
               )}
@@ -371,7 +390,7 @@ export default function ActualsPage() {
           </CardHeader>
           <CardContent>
             {lineUserId ? (
-              /* UID already known from LINE auth — no manual entry needed */
+              /* Already connected — one-click sync */
               <div className="flex items-center gap-3">
                 <span className="text-xs text-muted-foreground">
                   Connected as{" "}
@@ -379,6 +398,13 @@ export default function ActualsPage() {
                     {lineUserId.slice(0, 8)}…
                   </code>
                 </span>
+                <button
+                  onClick={() => { setLineUserId(""); setLineSyncMsg(null); }}
+                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                  title="Disconnect LINE account"
+                >
+                  Disconnect
+                </button>
                 <Button
                   size="sm"
                   onClick={handleLineSync}
@@ -390,34 +416,22 @@ export default function ActualsPage() {
                 </Button>
               </div>
             ) : (
-              /* Fallback: manual UID entry (non-LINE auth users) */
-              <>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Enter your LINE UID (e.g.{" "}
-                  <code className="bg-muted px-1 rounded">U1a2b3c4d…</code>)
-                  from the Expense Tracker app. Transactions are merged and deduplicated automatically.
+              /* Not connected — show LINE OAuth button */
+              <div className="flex items-center gap-3">
+                <p className="text-xs text-muted-foreground flex-1">
+                  Authorize once with LINE to pull transactions automatically.
+                  No UID copy-paste required.
                 </p>
-                <div className="flex gap-2 items-center">
-                  <Input
-                    value={lineUidInput}
-                    onChange={e => setLineUidInput(e.target.value)}
-                    placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                    className="font-mono text-xs h-9 flex-1"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleLineSync}
-                    disabled={lineSyncing || !lineUidInput.trim()}
-                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
-                  >
-                    <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
-                    {lineSyncing ? "Syncing…" : "Sync Now"}
+                <a href={buildLineConnectUrl()} className="inline-flex shrink-0">
+                  <Button size="sm" className="bg-[#06C755] hover:bg-[#05a847] text-white">
+                    <Smartphone size={13} />
+                    Connect with LINE
                   </Button>
-                </div>
-              </>
+                </a>
+              </div>
             )}
             {lineSyncMsg && (
-              <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
+              <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("LINE connection failed") || lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
                 {lineSyncMsg}
               </p>
             )}
