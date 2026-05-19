@@ -17,6 +17,11 @@ export async function middleware(req: NextRequest) {
     return res;
   }
 
+  // Fast path: custom app session cookie (set by synthesizeSession for LINE/non-Supabase logins)
+  if (req.cookies.get("fp_session_exists")?.value === "1") {
+    return res;
+  }
+
   try {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
