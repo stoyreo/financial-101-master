@@ -116,6 +116,12 @@ interface Store {
   setRemoteSyncStatus: (status: "idle" | "saving" | "completed" | "error", error?: string) => void;
   setHydratedFromRemote: (v: boolean) => void;
 
+  // ── LINE integration ─────────────────────────────────
+  lineUserId: string;
+  lineLastSyncedAt: string | null;
+  setLineUserId: (uid: string) => void;
+  setLineLastSyncedAt: (iso: string) => void;
+
   // ── Utility ───────────────────────────────────────────
   reloadScenariosFromSeed: () => void;       // Reload only scenarios without losing other data
   loadSeedData: () => void;
@@ -177,6 +183,8 @@ export const useStore = create<Store>()(
       lastRemoteSaveTime: null,
       lastSyncError: null,
       isHydratedFromRemote: false,
+      lineUserId: "",
+      lineLastSyncedAt: null,
 
       // ── Profile ──────────────────────────────────────
       setProfile: (p) => set((state) => {
@@ -808,6 +816,14 @@ export const useStore = create<Store>()(
       }),
       setHydratedFromRemote: (v) => set((state) => {
         state.isHydratedFromRemote = v;
+      }),
+
+      // ── LINE integration ────────────────────────────
+      setLineUserId: (uid) => set((state) => {
+        state.lineUserId = uid;
+      }),
+      setLineLastSyncedAt: (iso) => set((state) => {
+        state.lineLastSyncedAt = iso;
       }),
     };
     }),

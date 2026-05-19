@@ -281,7 +281,7 @@ export interface Transaction {
   fxCurrency?: string;
   category: string;
   matchedExpenseId?: string;
-  source: "uob" | "kbank" | "scb" | "kept" | "tmb" | "manual" | "other";
+  source: "uob" | "kbank" | "scb" | "kept" | "tmb" | "manual" | "line" | "other";
   cardLast4?: string;
   statementImportId?: string;
   confidence: number;

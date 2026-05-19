@@ -25,7 +25,7 @@ import {
 } from "@/components/ui";
 import {
   Upload, AlertTriangle, TrendingDown, Sparkles, FileText, Trash2,
-  RefreshCw, Filter, ChevronRight,
+  RefreshCw, Filter, ChevronRight, Smartphone,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, XAxis, YAxis, Tooltip as RTip,
@@ -53,6 +53,7 @@ export default function ActualsPage() {
     importStatement, recategorizeTransaction, deleteTransaction,
     clearMonthTransactions, deleteStatementImport, reapplyRules, updateExpense, addExpense,
     customExpenseCategories,
+    lineUserId, setLineUserId, lineLastSyncedAt, setLineLastSyncedAt,
   } = store;
 
   // ── Account isolation ─────────────────────────────────
@@ -79,6 +80,12 @@ export default function ActualsPage() {
   const [uploading, setUploading] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── LINE sync state ────────────────────────────────────
+  const [lineUidInput, setLineUidInput] = useState(lineUserId ?? "");
+  const [lineSyncing, setLineSyncing] = useState(false);
+  const [lineSyncMsg, setLineSyncMsg] = useState<string | null>(null);
+  const [showLinePanel, setShowLinePanel] = useState(false);
 
   // Bucket by credit-card billing month (derived from STATEMENT DATE on the
   // PDF), so a statement that covers e.g. 23 Mar → 22 Apr is one "April"
@@ -176,6 +183,55 @@ export default function ActualsPage() {
     }
   }
 
+  // ── LINE sync handler ────────────────────────────────
+  async function handleLineSync() {
+    const uid = lineUidInput.trim();
+    if (!uid) { setLineSyncMsg("Enter your LINE UID first."); return; }
+    setLineSyncing(true);
+    setLineSyncMsg(null);
+    // Persist the UID for next time
+    setLineUserId(uid);
+    try {
+      const res = await fetch("/api/line/fetch-transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineUserId: uid, activeAccountId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message ?? json.error ?? "Sync failed");
+
+      const { transactions: fetched, total } = json as { transactions: Transaction[]; total: number };
+
+      // Merge into the store via importStatement — reuses its deduplication logic.
+      // We pass an empty-shell "statement" since LINE txns have no statement PDF.
+      const now = new Date().toISOString();
+      const { added, duplicates } = importStatement(
+        {
+          accountId: activeAccountId,
+          fileName: `LINE sync ${now.slice(0, 10)}`,
+          bank: "LINE",
+          statementDate: now.slice(0, 10),
+          billingMonth: now.slice(0, 7),
+          periodStart: now.slice(0, 10),
+          periodEnd: now.slice(0, 10),
+          totalCharges: fetched.filter(t => !t.isCredit).reduce((s, t) => s + t.amount, 0),
+          totalCredits: 0,
+        },
+        fetched,
+      );
+
+      setLineLastSyncedAt(now);
+      setLineSyncMsg(
+        `Synced ${total} transactions from LINE — ${added} new, ${duplicates} already on file.`
+      );
+      if (added > 0) setShowLinePanel(false);
+    } catch (e: any) {
+      setLineSyncMsg(`Error: ${e.message ?? "sync failed"}`);
+    } finally {
+      setLineSyncing(false);
+    }
+  }
+
   // ── Empty state: no imports yet ──────────────────────
   if (transactions.length === 0) {
     return (
@@ -207,6 +263,35 @@ export default function ActualsPage() {
               }
             />
             {importMsg && <p className="mt-4 text-center text-sm text-muted-foreground">{importMsg}</p>}
+
+            {/* LINE sync in empty state */}
+            <div className="mt-6 pt-6 border-t border-border">
+              <p className="text-xs text-muted-foreground text-center mb-3">
+                Or pull transactions directly from the LINE Expense Tracker
+              </p>
+              <div className="flex gap-2 max-w-sm mx-auto">
+                <Input
+                  value={lineUidInput}
+                  onChange={e => setLineUidInput(e.target.value)}
+                  placeholder="LINE UID — Uxxxxxxx…"
+                  className="font-mono text-xs h-9"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleLineSync}
+                  disabled={lineSyncing || !lineUidInput.trim()}
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
+                >
+                  <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
+                  {lineSyncing ? "Syncing…" : "Sync LINE"}
+                </Button>
+              </div>
+              {lineSyncMsg && (
+                <p className={`mt-2 text-xs text-center ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
+                  {lineSyncMsg}
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -231,6 +316,14 @@ export default function ActualsPage() {
             <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
               <Upload size={14} /> {uploading ? "Extracting…" : "Import Statement"}
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowLinePanel(v => !v)}
+              className={showLinePanel ? "border-cyan-500 text-cyan-500" : ""}
+            >
+              <Smartphone size={14} /> Sync from LINE
+            </Button>
             <Link href="/expenses/savings">
               <Button size="sm"><Sparkles size={14} /> Savings Optimizer</Button>
             </Link>
@@ -240,6 +333,51 @@ export default function ActualsPage() {
 
       {importMsg && (
         <div className="mb-4 px-3 py-2 rounded-md bg-blue-500/10 text-blue-500 text-sm">{importMsg}</div>
+      )}
+
+      {/* LINE sync panel */}
+      {showLinePanel && (
+        <Card className="mb-4 border-cyan-500/30 bg-cyan-500/5">
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Smartphone size={14} className="text-cyan-500" />
+              Sync from LINE Expense Tracker
+              {lineLastSyncedAt && (
+                <span className="ml-auto text-xs font-normal text-muted-foreground">
+                  Last synced {lineLastSyncedAt.slice(0, 10)}
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-muted-foreground mb-3">
+              Enter your LINE UID (e.g. <code className="bg-muted px-1 rounded">U1a2b3c4d…</code>)
+              from the Expense Tracker app. Transactions are merged and deduplicated automatically.
+            </p>
+            <div className="flex gap-2 items-center">
+              <Input
+                value={lineUidInput}
+                onChange={e => setLineUidInput(e.target.value)}
+                placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                className="font-mono text-xs h-9 flex-1"
+              />
+              <Button
+                size="sm"
+                onClick={handleLineSync}
+                disabled={lineSyncing || !lineUidInput.trim()}
+                className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
+              >
+                <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
+                {lineSyncing ? "Syncing…" : "Sync Now"}
+              </Button>
+            </div>
+            {lineSyncMsg && (
+              <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
+                {lineSyncMsg}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {/* Month selector + summary stats */}
@@ -427,7 +565,12 @@ export default function ActualsPage() {
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <div className="font-medium">{t.description}</div>
+                      <div className="font-medium flex items-center gap-1.5">
+                        {t.description}
+                        {t.source === "line" && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-medium shrink-0">LINE</span>
+                        )}
+                      </div>
                       {t.fxAmount && (
                         <div className="text-xs text-muted-foreground">
                           {t.fxCurrency} {t.fxAmount.toFixed(2)}
