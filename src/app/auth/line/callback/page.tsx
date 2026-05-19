@@ -10,9 +10,15 @@ function LineCallbackContent() {
   useEffect(() => {
     const handleLineCallback = async () => {
       const code = searchParams.get("code");
+      const lineError = searchParams.get("error");
+      const lineErrorDesc = searchParams.get("error_description");
 
       if (!code) {
-        router.replace("/login?error=line_failed");
+        // LINE itself rejected the authorization (e.g. unapproved scope, cancelled)
+        console.error("LINE auth rejected:", lineError, lineErrorDesc);
+        router.replace(
+          `/login?error=line_failed&line_error=${encodeURIComponent(lineError || "no_code")}&desc=${encodeURIComponent(lineErrorDesc || "")}`
+        );
         return;
       }
 
