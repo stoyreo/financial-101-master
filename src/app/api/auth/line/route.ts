@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       const errorData = await tokenResponse.text();
       console.error("LINE token exchange failed:", errorData);
       return NextResponse.json(
-        { error: "Failed to exchange authorization code" },
+        { error: "Failed to exchange authorization code", lineError: errorData },
         { status: 400 }
       );
     }

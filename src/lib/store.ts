@@ -352,9 +352,12 @@ export const useStore = create<Store>()(
             if (existing.has(t.dedupeKey)) { duplicates++; continue; }
             const upper = t.merchantKey.toUpperCase();
             let bestRule: MerchantRule | null = null;
-            for (const r of rules) {
-              if (upper.includes(r.pattern.toUpperCase())) {
-                if (!bestRule || r.pattern.length > bestRule.pattern.length) bestRule = r;
+            // LINE categories are trusted as-is — skip merchant rule matching
+            if (t.source !== "line") {
+              for (const r of rules) {
+                if (upper.includes(r.pattern.toUpperCase())) {
+                  if (!bestRule || r.pattern.length > bestRule.pattern.length) bestRule = r;
+                }
               }
             }
             const finalCat = bestRule ? bestRule.category : t.category;
@@ -854,6 +857,8 @@ export const useStore = create<Store>()(
         statementImports: state.statementImports,
         customExpenseCategories: state.customExpenseCategories,
         isHydratedFromRemote: state.isHydratedFromRemote,
+        lineUserId: state.lineUserId,
+        lineLastSyncedAt: state.lineLastSyncedAt,
         // Exclude sync status from persisted state
         // (localSyncStatus, remoteSyncStatus, lastLocalSaveTime, lastRemoteSaveTime, lastSyncError)
       }),

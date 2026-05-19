@@ -58,7 +58,7 @@ function mapExpense(e: ExpenseOut, activeAccountId: string): Transaction {
     description: description.slice(0, 100),
     merchantKey,
     amount: Math.abs(e.amount),
-    currency: (e.currency?.toUpperCase() === "THB" ? "THB" : "THB") as "THB",
+    currency: "THB" as const,
     fxAmount: undefined,
     fxCurrency: undefined,
     category: e.category.name,

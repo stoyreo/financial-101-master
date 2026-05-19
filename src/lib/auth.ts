@@ -97,6 +97,8 @@ export function synthesizeSession(appUser: AppUser): Session {
           yearlyForecast: [],
           monthlyForecast: [],
           isHydratedFromRemote: false,
+          lineUserId: "",
+          lineLastSyncedAt: null,
         }); // merge only — do NOT pass replace=true, that wipes all store action functions
         sessionStorage.removeItem("financial-planner-storage-v3");
       } catch { /* non-fatal */ }
@@ -152,6 +154,8 @@ export async function clearSession() {
       yearlyForecast: [],
       monthlyForecast: [],
       isHydratedFromRemote: false,
+      lineUserId: "",
+      lineLastSyncedAt: null,
     }); // merge only — do NOT pass replace=true
     sessionStorage.removeItem("financial-planner-storage-v3");
   } catch { /* non-fatal */ }

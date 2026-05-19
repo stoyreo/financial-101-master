@@ -55,8 +55,11 @@ function LineCallbackContent() {
         // Synthesize session
         synthesizeSession(appUser);
 
-        // Redirect to home
-        router.replace("/");
+        // Full reload instead of router.replace — forces a fresh server
+        // round-trip so the middleware sees the fp_session_exists cookie that
+        // synthesizeSession just set. router.replace can use a prefetched
+        // (pre-auth) RSC payload and land back on /login with no error.
+        window.location.href = "/";
       } catch (err) {
         console.error("LINE callback error:", err);
         router.replace("/login?error=line_failed");
