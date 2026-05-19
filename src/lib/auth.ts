@@ -69,7 +69,7 @@ export function getSession(): Session | null {
  * Synthesize a Session from Supabase auth + AppUser registry.
  * Called by middleware/auth callback to populate the session cache.
  */
-export function synthesizeSession(appUser: AppUser): Session {
+export function synthesizeSession(appUser: AppUser, opts?: { lineUserId?: string }): Session {
   // 🔐 Reset Zustand to a BLANK snapshot on session synthesis (not Somchai seed).
   // The remote GET /api/sync will hydrate any real data the user has saved.
   if (isClient) {
@@ -97,7 +97,7 @@ export function synthesizeSession(appUser: AppUser): Session {
           yearlyForecast: [],
           monthlyForecast: [],
           isHydratedFromRemote: false,
-          lineUserId: "",
+          lineUserId: opts?.lineUserId ?? "",
           lineLastSyncedAt: null,
         }); // merge only — do NOT pass replace=true, that wipes all store action functions
         sessionStorage.removeItem("financial-planner-storage-v3");

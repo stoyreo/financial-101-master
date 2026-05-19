@@ -269,23 +269,43 @@ export default function ActualsPage() {
               <p className="text-xs text-muted-foreground text-center mb-3">
                 Or pull transactions directly from the LINE Expense Tracker
               </p>
-              <div className="flex gap-2 max-w-sm mx-auto">
-                <Input
-                  value={lineUidInput}
-                  onChange={e => setLineUidInput(e.target.value)}
-                  placeholder="LINE UID — Uxxxxxxx…"
-                  className="font-mono text-xs h-9"
-                />
-                <Button
-                  size="sm"
-                  onClick={handleLineSync}
-                  disabled={lineSyncing || !lineUidInput.trim()}
-                  className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
-                >
-                  <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
-                  {lineSyncing ? "Syncing…" : "Sync LINE"}
-                </Button>
-              </div>
+              {lineUserId ? (
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    Connected as{" "}
+                    <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                      {lineUserId.slice(0, 8)}…
+                    </code>
+                  </span>
+                  <Button
+                    size="sm"
+                    onClick={handleLineSync}
+                    disabled={lineSyncing}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
+                  >
+                    <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
+                    {lineSyncing ? "Syncing…" : "Sync LINE"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2 max-w-sm mx-auto">
+                  <Input
+                    value={lineUidInput}
+                    onChange={e => setLineUidInput(e.target.value)}
+                    placeholder="LINE UID — Uxxxxxxx…"
+                    className="font-mono text-xs h-9"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleLineSync}
+                    disabled={lineSyncing || !lineUidInput.trim()}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
+                  >
+                    <Smartphone size={13} className={lineSyncing ? "animate-pulse" : ""} />
+                    {lineSyncing ? "Syncing…" : "Sync LINE"}
+                  </Button>
+                </div>
+              )}
               {lineSyncMsg && (
                 <p className={`mt-2 text-xs text-center ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
                   {lineSyncMsg}
@@ -350,27 +370,52 @@ export default function ActualsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-xs text-muted-foreground mb-3">
-              Enter your LINE UID (e.g. <code className="bg-muted px-1 rounded">U1a2b3c4d…</code>)
-              from the Expense Tracker app. Transactions are merged and deduplicated automatically.
-            </p>
-            <div className="flex gap-2 items-center">
-              <Input
-                value={lineUidInput}
-                onChange={e => setLineUidInput(e.target.value)}
-                placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                className="font-mono text-xs h-9 flex-1"
-              />
-              <Button
-                size="sm"
-                onClick={handleLineSync}
-                disabled={lineSyncing || !lineUidInput.trim()}
-                className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
-              >
-                <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
-                {lineSyncing ? "Syncing…" : "Sync Now"}
-              </Button>
-            </div>
+            {lineUserId ? (
+              /* UID already known from LINE auth — no manual entry needed */
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">
+                  Connected as{" "}
+                  <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                    {lineUserId.slice(0, 8)}…
+                  </code>
+                </span>
+                <Button
+                  size="sm"
+                  onClick={handleLineSync}
+                  disabled={lineSyncing}
+                  className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0 ml-auto"
+                >
+                  <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
+                  {lineSyncing ? "Syncing…" : "Sync Now"}
+                </Button>
+              </div>
+            ) : (
+              /* Fallback: manual UID entry (non-LINE auth users) */
+              <>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Enter your LINE UID (e.g.{" "}
+                  <code className="bg-muted px-1 rounded">U1a2b3c4d…</code>)
+                  from the Expense Tracker app. Transactions are merged and deduplicated automatically.
+                </p>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    value={lineUidInput}
+                    onChange={e => setLineUidInput(e.target.value)}
+                    placeholder="Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    className="font-mono text-xs h-9 flex-1"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleLineSync}
+                    disabled={lineSyncing || !lineUidInput.trim()}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0"
+                  >
+                    <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
+                    {lineSyncing ? "Syncing…" : "Sync Now"}
+                  </Button>
+                </div>
+              </>
+            )}
             {lineSyncMsg && (
               <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
                 {lineSyncMsg}

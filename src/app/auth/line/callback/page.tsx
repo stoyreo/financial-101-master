@@ -59,7 +59,7 @@ function LineCallbackContent() {
         }
 
         // Synthesize session
-        synthesizeSession(appUser);
+        synthesizeSession(appUser, { lineUserId });
 
         // Full reload instead of router.replace — forces a fresh server
         // round-trip so the middleware sees the fp_session_exists cookie that
