@@ -124,6 +124,7 @@ export default function ActualsPage() {
   }, [allMonths, selectedMonth]);
 
   const [filterCat, setFilterCat] = useState<string>("all");
+  const [filterSource, setFilterSource] = useState<"all" | "line" | "statement">("all");
   const [savingsTarget, setSavingsTarget] = useState<number>(20000);
 
   // ── Derived data ─────────────────────────────────────
@@ -142,8 +143,22 @@ export default function ActualsPage() {
     [transactions, selectedMonth]
   );
   const filteredTxns = useMemo(() => {
-    return monthTxns.filter(t => filterCat === "all" || t.category === filterCat);
-  }, [monthTxns, filterCat]);
+    return monthTxns.filter(t => {
+      if (filterCat !== "all" && t.category !== filterCat) return false;
+      if (filterSource === "line" && t.source !== "line") return false;
+      if (filterSource === "statement" && t.source === "line") return false;
+      return true;
+    });
+  }, [monthTxns, filterCat, filterSource]);
+
+  // Count of LINE transactions across ALL months (for the hint strip)
+  const totalLineTxns = useMemo(() => 
+    transactions.filter(t => t.source === "line").length,
+  [transactions]);
+  const lineMonths = useMemo(() => {
+    const set = new Set(transactions.filter(t => t.source === "line").map(t => t.billingMonth));
+    return Array.from(set).sort().reverse();
+  }, [transactions]);
 
   const topMerchants = useMemo(() => {
     const map: Record<string, number> = {};
@@ -591,10 +606,19 @@ export default function ActualsPage() {
 
       {/* Transactions */}
       <Card className="mb-6">
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-sm">Transactions — {selectedMonth ? ymLabel(selectedMonth) : ""} ({filteredTxns.length})</CardTitle>
-          <div className="flex items-center gap-2">
+        <CardHeader className="flex-row items-center justify-between flex-wrap gap-2">
+          <CardTitle className="text-sm">
+            Transactions — {selectedMonth ? ymLabel(selectedMonth) : ""} ({filteredTxns.length})
+          </CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
             <Filter size={14} className="text-muted-foreground" />
+            {/* Source filter */}
+            <Select value={filterSource} onChange={e => setFilterSource(e.target.value as "all" | "line" | "statement")} className="h-8 text-xs w-36">
+              <option value="all">All Sources</option>
+              <option value="line">LINE only</option>
+              <option value="statement">Statement only</option>
+            </Select>
+            {/* Category filter */}
             <Select value={filterCat} onChange={e => setFilterCat(e.target.value)} className="h-8 text-xs w-40">
               <option value="all">All Categories</option>
               {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
@@ -604,6 +628,24 @@ export default function ActualsPage() {
             </Button>
           </div>
         </CardHeader>
+        {/* LINE transactions cross-month hint */}
+        {totalLineTxns > 0 && filterSource !== "line" && (
+          <div className="px-4 pb-0">
+            <div className="flex items-center gap-2 text-xs text-cyan-400 bg-cyan-500/10 rounded-md px-3 py-1.5">
+              <Smartphone size={12} />
+              <span>
+                {totalLineTxns} LINE transaction{totalLineTxns === 1 ? "" : "s"} across {lineMonths.length} month{lineMonths.length === 1 ? "" : "s"}
+                {lineMonths.length > 0 && ` (${lineMonths.map(m => ymLabel(m)).join(", ")})`}.
+              </span>
+              <button
+                onClick={() => setFilterSource("line")}
+                className="ml-auto underline hover:text-cyan-300 shrink-0"
+              >
+                Show LINE only
+              </button>
+            </div>
+          </div>
+        )}
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
