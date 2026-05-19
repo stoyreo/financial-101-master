@@ -115,6 +115,7 @@ export default function ActualsPage() {
   // bucket regardless of which side of the month each transaction landed.
   const allMonths = useMemo(() => {
     const set = new Set(transactions.map(t => t.billingMonth));
+    set.add(new Date().toISOString().slice(0, 7)); // always show current month
     return Array.from(set).sort().reverse();
   }, [transactions]);
 
