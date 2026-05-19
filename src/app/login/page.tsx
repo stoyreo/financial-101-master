@@ -1,12 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSession, synthesizeSession, ensureAppUserFromSupabase } from "@/lib/auth";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
@@ -23,9 +24,19 @@ export default function LoginPage() {
         router.replace("/");
         return;
       }
+      // Show LINE error details if redirected back from LINE auth failure
+      const urlError = searchParams.get("error");
+      const lineError = searchParams.get("line_error");
+      const lineDesc = searchParams.get("desc");
+      if (urlError === "line_failed") {
+        const detail = lineError ? ` (${lineError}${lineDesc ? ": " + lineDesc : ""})` : "";
+        setErrorMsg(`LINE sign-in failed${detail}. Please try again or use email.`);
+        setState("error");
+        console.error("[LINE] Auth failed:", lineError, lineDesc);
+      }
       setReady(true);
     })();
-  }, [router]);
+  }, [router, searchParams]);
 
   const handleOAuth = async (provider: "google") => {
     setState("loading");
@@ -60,7 +71,9 @@ export default function LoginPage() {
       `${window.location.origin}/auth/line/callback`
     );
     const state = Math.random().toString(36).slice(2);
-    window.location.href = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}&scope=profile%20openid%20email`;
+    // Note: 'email' scope requires LINE channel approval — omit it and use
+    // the synthetic email fallback (line_<userId>@line.user) in the API route.
+    window.location.href = `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}&scope=profile%20openid`;
   };
 
   const handleMagicLink = async () => {

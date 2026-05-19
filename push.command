@@ -16,7 +16,7 @@ git stash drop 2>/dev/null || true
 
 # Commit everything that's changed
 git add -A
-git diff --cached --quiet && echo "(nothing new to commit)" || git commit -m "Fix Google/magic-link OAuth session init + add Google to signup"
+git diff --cached --quiet && echo "(nothing new to commit)" || git commit -m "fix(LINE): remove email scope + surface LINE auth errors in UI"
 
 # Push, force if needed (sole developer)
 git push origin main || git push --force-with-lease origin main
