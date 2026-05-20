@@ -5,7 +5,22 @@ import { getSession, clearSession, ensureAppUserFromSupabase, synthesizeSession 
 import { useStore } from "@/lib/store";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
-const PUBLIC_PATHS = ["/login", "/login/"];
+// 🔐 Paths that must NOT be blocked by AuthGuard.
+// `/auth/line/callback` and `/auth/callback` are OAuth landing pages — the
+// session hasn't been synthesized yet when they first mount. If AuthGuard
+// runs its session check there, it races the LINE/Supabase code-exchange
+// useEffect, loses (clearSession + router.replace("/login")), and the user
+// bounces to /login before the callback can finish writing the session.
+// They must be treated as public so the callback page is the only thing
+// that decides where to send the user.
+const PUBLIC_PATHS = [
+  "/login",
+  "/login/",
+  "/auth/line/callback",
+  "/auth/line/callback/",
+  "/auth/callback",
+  "/auth/callback/",
+];
 
 // Module-scope flag: track which storageKey we've already hydrated from
 // the server in this browser session. We must NOT call loadUserNamespace

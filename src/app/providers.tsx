@@ -4,9 +4,22 @@ import { usePathname } from "next/navigation";
 import { ThemeProvider } from "next-themes";
 
 // Paths that render standalone (no AppShell wrapper). Must stay in sync with
-// AuthGuard's PUBLIC_PATHS so the login page etc. render without any
-// authenticated UI (sidebar, profile card, version popups, etc).
-const PUBLIC_PATHS = ["/login", "/login/"];
+// AuthGuard's PUBLIC_PATHS so the login page and OAuth callbacks render
+// without any authenticated UI (sidebar, profile card, version popups, etc).
+//
+// `/auth/line/callback` and `/auth/callback` need to be here too — those
+// pages do their own OAuth handshake and then `window.location.href = "/"`
+// once a session has been synthesized. Wrapping them in AppShell flashes the
+// sidebar for a moment and (worse) gives AuthGuard a chance to redirect
+// before the callback completes.
+const PUBLIC_PATHS = [
+  "/login",
+  "/login/",
+  "/auth/line/callback",
+  "/auth/line/callback/",
+  "/auth/callback",
+  "/auth/callback/",
+];
 
 // ssr:false — prevents ANY server-side execution of browser-API-dependent code
 // This is the correct pattern for fully client-side apps with static export
