@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(request: NextRequest) {
   try {
@@ -112,10 +113,56 @@ export async function POST(request: NextRequest) {
       email = `line_${lineUserId}@line.user`;
     }
 
+    // ── Create a real Supabase auth session so the sync API can authenticate ──
+    // The sync route uses supabase.auth.getUser() (cookie-based). Without a
+    // Supabase session, LINE users always get 401 → "Remote: error" on the dashboard.
+    //
+    // Strategy: use auth.admin.generateLink({ type: "magiclink" }) to get a
+    // hashed_token. The client then calls supabase.auth.verifyOtp({ token_hash })
+    // which exchanges it for a real browser session (sets Supabase cookies).
+    let supabaseTokenHash: string | null = null;
+
+    try {
+      const adminDb = getSupabaseAdmin();
+
+      // Ensure the Supabase auth user exists (email-confirmed, no password)
+      const { data: listData } = await adminDb.auth.admin.listUsers();
+      const existingAuthUser = listData?.users?.find(
+        (u) => u.email?.toLowerCase() === email.toLowerCase()
+      );
+
+      if (!existingAuthUser) {
+        const { error: createErr } = await adminDb.auth.admin.createUser({
+          email,
+          email_confirm: true,
+          user_metadata: { line_user_id: lineUserId, display_name: displayName },
+        });
+        if (createErr) {
+          console.error("[LINE auth] Failed to create Supabase auth user:", createErr.message);
+        }
+      }
+
+      // Generate a one-time magic-link token the client can exchange for a session
+      const { data: linkData, error: linkErr } = await adminDb.auth.admin.generateLink({
+        type: "magiclink",
+        email,
+      });
+
+      if (linkErr) {
+        console.error("[LINE auth] generateLink error:", linkErr.message);
+      } else {
+        supabaseTokenHash = (linkData as any)?.properties?.hashed_token ?? null;
+      }
+    } catch (sessionCreationErr) {
+      // Non-fatal: local session still works; sync will degrade gracefully
+      console.error("[LINE auth] Supabase session creation error:", sessionCreationErr);
+    }
+
     return NextResponse.json({
       email,
       lineUserId,
       displayName,
+      supabaseTokenHash,
     });
   } catch (err) {
     console.error("LINE auth error:", err);

@@ -1,18 +1,22 @@
 "use client";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
 import { ensureAppUserFromSupabase, synthesizeSession } from "@/lib/auth";
 
 function LineCallbackContent() {
-  const searchParams = useSearchParams();
   const router = useRouter();
 
   useEffect(() => {
     const handleLineCallback = async () => {
-      const code = searchParams.get("code");
-      const state = searchParams.get("state") || "";
-      const lineError = searchParams.get("error");
-      const lineErrorDesc = searchParams.get("error_description");
+      // Read params directly from window.location to avoid the Next.js
+      // useSearchParams() hydration race where it returns empty params on the
+      // first render (before client-side hydration) and fires the effect early,
+      // causing an immediate redirect to /login before the real params arrive.
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      const state = params.get("state") || "";
+      const lineError = params.get("error");
+      const lineErrorDesc = params.get("error_description");
 
       if (!code) {
         console.error("LINE auth rejected:", lineError, lineErrorDesc);
@@ -49,7 +53,7 @@ function LineCallbackContent() {
           return;
         }
 
-        const { email, lineUserId } = data;
+        const { email, lineUserId, supabaseTokenHash } = data;
 
         if (!lineUserId) {
           if (state === "sync") {
@@ -75,6 +79,28 @@ function LineCallbackContent() {
           return;
         }
 
+        // Establish a real Supabase browser session so the sync API can
+        // authenticate via supabase.auth.getUser() (cookie-based).
+        // Without this, LINE users always get "Remote: error" on the dashboard.
+        // The server generated a magic-link token_hash; we exchange it here for
+        // a real session (verifyOtp sets the Supabase auth cookies in the browser).
+        if (supabaseTokenHash) {
+          try {
+            const { getSupabaseBrowser } = await import("@/lib/supabase/client");
+            const supabase = getSupabaseBrowser();
+            const { error: otpErr } = await supabase.auth.verifyOtp({
+              token_hash: supabaseTokenHash,
+              type: "magiclink",
+            });
+            if (otpErr) {
+              console.warn("Failed to verify Supabase OTP token:", otpErr.message);
+            }
+          } catch (sessionErr) {
+            // Non-fatal: app session still works; sync will retry on next load
+            console.warn("Failed to set Supabase browser session:", sessionErr);
+          }
+        }
+
         const appUser = await ensureAppUserFromSupabase(email, lineUserId);
         if (!appUser) {
           router.replace("/login?error=line_failed");
@@ -94,7 +120,8 @@ function LineCallbackContent() {
     };
 
     handleLineCallback();
-  }, [searchParams, router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
