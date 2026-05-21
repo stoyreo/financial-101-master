@@ -115,8 +115,12 @@ export function synthesizeSession(appUser: AppUser, opts?: { lineUserId?: string
   if (isClient) {
     _cachedSession = session;
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    // Set a cookie so server-side middleware can recognise this session
-    document.cookie = `fp_session_exists=1; path=/; max-age=${SESSION_TTL / 1000}; SameSite=Lax`;
+    // Set cookies so middleware + sync API can recognise this session server-side
+    const maxAge = SESSION_TTL / 1000;
+    document.cookie = `fp_session_exists=1; path=/; max-age=${maxAge}; SameSite=Lax`;
+    // fp_storage_key lets /api/sync authenticate LINE (and other non-Supabase) users
+    // without needing Supabase auth cookies. Server verifies the key against app_users.
+    document.cookie = `fp_storage_key=${encodeURIComponent(session.storageKey)}; path=/; max-age=${maxAge}; SameSite=Lax`;
   }
   setCurrentUserId(appUser.id);
   return session;
@@ -127,8 +131,9 @@ export async function clearSession() {
   if (!isClient) return;
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem("fp_current_user");
-  // Clear the middleware cookie too
+  // Clear the middleware + sync cookies too
   document.cookie = "fp_session_exists=; path=/; max-age=0; SameSite=Lax";
+  document.cookie = "fp_storage_key=; path=/; max-age=0; SameSite=Lax";
 
   // 🔐 Clear the Zustand store to prevent the next user from seeing this user's data
   // Use dynamic import to avoid circular dependency: accounts.ts -> auth.ts -> store.ts -> accounts.ts

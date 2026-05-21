@@ -23,44 +23,61 @@ function sanitizeStorageKey(key: string): string | null {
  */
 async function getAuthenticatedUserStorageKey(req: NextRequest) {
   try {
-    // Get Supabase session from cookies
+    // ── Path A: Supabase session cookie (email/password, Google OAuth) ─────
     const supabase = getSupabaseServer();
     const {
       data: { user: supabaseUser },
       error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !supabaseUser) {
-      console.warn("[getAuthenticatedUserStorageKey] Auth failed:", authError?.message);
-      return { ok: false, error: "unauthorized: not authenticated with Supabase" };
+    if (!authError && supabaseUser) {
+      const adminDb = getSupabaseAdmin();
+      const { data: userRows, error: queryError } = await adminDb
+        .from("app_users")
+        .select("*")
+        .eq("email", supabaseUser.email?.toLowerCase() || "")
+        .maybeSingle();
+
+      if (queryError) {
+        console.error("[getAuthenticatedUserStorageKey] Supabase path query error:", queryError.message);
+        return { ok: false, error: `database error: ${queryError.message}` };
+      }
+      if (!userRows) {
+        console.warn("[getAuthenticatedUserStorageKey] User not found in app_users:", supabaseUser.email);
+        return { ok: false, error: "unauthorized: user not found in app registry" };
+      }
+      const appUser = rowToAppUser(userRows as any);
+      if (!appUser.isActive) {
+        return { ok: false, error: "unauthorized: user account is inactive" };
+      }
+      return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
     }
 
-    // Look up the AppUser record by Supabase email
-    const adminDb = getSupabaseAdmin();
-    const { data: userRows, error: queryError } = await adminDb
-      .from("app_users")
-      .select("*")
-      .eq("email", supabaseUser.email?.toLowerCase() || "")
-      .maybeSingle();
+    // ── Path B: fp_storage_key cookie (LINE login, other non-Supabase auth) ─
+    // synthesizeSession writes this cookie alongside fp_session_exists.
+    // We verify the storageKey exists and is active in app_users before trusting it.
+    const rawStorageKey = req.cookies.get("fp_storage_key")?.value;
+    if (rawStorageKey) {
+      const storageKey = decodeURIComponent(rawStorageKey);
+      if (/^[A-Za-z0-9_-]+$/.test(storageKey)) {
+        const adminDb = getSupabaseAdmin();
+        const { data: userRows, error: queryError } = await adminDb
+          .from("app_users")
+          .select("*")
+          .eq("storage_key", storageKey)
+          .maybeSingle();
 
-    if (queryError) {
-      console.error("[getAuthenticatedUserStorageKey] Query error:", queryError.message);
-      return { ok: false, error: `database error: ${queryError.message}` };
+        if (!queryError && userRows) {
+          const appUser = rowToAppUser(userRows as any);
+          if (appUser.isActive) {
+            return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
+          }
+        }
+      }
     }
 
-    if (!userRows) {
-      console.warn("[getAuthenticatedUserStorageKey] User not found in app_users:", supabaseUser.email);
-      return { ok: false, error: "unauthorized: user not found in app registry" };
-    }
-
-    const appUser = rowToAppUser(userRows as any);
-
-    if (!appUser.isActive) {
-      console.warn("[getAuthenticatedUserStorageKey] User is inactive:", appUser.id);
-      return { ok: false, error: "unauthorized: user account is inactive" };
-    }
-
-    return { ok: true, storageKey: appUser.storageKey, userId: appUser.id, supabaseUserId: supabaseUser.id };
+    console.warn("[getAuthenticatedUserStorageKey] Auth failed — no Supabase session and no valid fp_storage_key cookie");
+    return { ok: false, error: "unauthorized: not authenticated" };
   } catch (err: any) {
     console.error("[getAuthenticatedUserStorageKey] Error:", err);
     return { ok: false, error: `error: ${String(err?.message ?? err)}` };
