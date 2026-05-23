@@ -122,9 +122,11 @@ export function BackupWidget({ compact = false }: { compact?: boolean }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const status = useGoogleDrive ? syncStatus : backupStatus;
-  const isConfigured = useGoogleDrive ? status.authenticated : status.configured;
-  const lastTime = useGoogleDrive ? status.lastSync : status.lastBackup;
+  const isConfigured = useGoogleDrive ? syncStatus.authenticated : backupStatus.configured;
+  const lastTime = useGoogleDrive ? syncStatus.lastSync : backupStatus.lastBackup;
+  const isSyncing = useGoogleDrive ? syncStatus.syncing : false;
+  const lastFileName = useGoogleDrive ? syncStatus.lastFileName : null;
+  const statusError = useGoogleDrive ? syncStatus.error : backupStatus.error;
   const serviceLabel = useGoogleDrive ? "Google Drive" : "OneDrive";
 
   const fmtTime = (iso: string | null) => {
@@ -160,17 +162,17 @@ export function BackupWidget({ compact = false }: { compact?: boolean }) {
       <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-[11px] w-full">
         {isConfigured ? (
           <>
-            {status.error ? (
+            {statusError ? (
               <AlertTriangle size={12} className="text-amber-500 shrink-0" />
             ) : (
               <CheckCircle size={12} className="text-emerald-500 shrink-0" />
             )}
             <span className="text-muted-foreground truncate flex-1">
-              {serviceLabel} {status.error ? "error" : fmtTime(lastTime)}
+              {serviceLabel} {statusError ? "error" : fmtTime(lastTime)}
             </span>
-            <button onClick={handleBackupNow} disabled={running || status.syncing}
+            <button onClick={handleBackupNow} disabled={running || isSyncing}
               className="hover:text-foreground text-muted-foreground shrink-0" title="Backup now">
-              <RefreshCw size={11} className={running || status.syncing ? "animate-spin" : ""} />
+              <RefreshCw size={11} className={running || isSyncing ? "animate-spin" : ""} />
             </button>
           </>
         ) : (
@@ -190,15 +192,15 @@ export function BackupWidget({ compact = false }: { compact?: boolean }) {
   return (
     <>
     <div className={`rounded-xl border p-4 text-sm space-y-3
-      ${isConfigured && !status.error
+      ${isConfigured && !statusError
         ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20"
-        : status.error
+        : statusError
         ? "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20"
         : "border-border bg-muted/30"}`}>
       <div className="flex items-center gap-2">
-        <CloudUpload size={16} className={isConfigured && !status.error ? "text-emerald-600" : "text-muted-foreground"} />
+        <CloudUpload size={16} className={isConfigured && !statusError ? "text-emerald-600" : "text-muted-foreground"} />
         <span className="font-medium">{serviceLabel} Auto-Backup</span>
-        {isConfigured && !status.error && (
+        {isConfigured && !statusError && (
           <span className="ml-auto text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 px-2 py-0.5 rounded-full">Active</span>
         )}
       </div>
@@ -215,18 +217,18 @@ export function BackupWidget({ compact = false }: { compact?: boolean }) {
               <div className="font-medium">Every 30 min</div>
             </div>
           </div>
-          {status.lastFileName && (
-            <div className="text-[11px] text-muted-foreground font-mono truncate">{status.lastFileName}</div>
+          {lastFileName && (
+            <div className="text-[11px] text-muted-foreground font-mono truncate">{lastFileName}</div>
           )}
-          {status.error && (
-            <div className="text-xs text-amber-700 dark:text-amber-300">{status.error}</div>
+          {statusError && (
+            <div className="text-xs text-amber-700 dark:text-amber-300">{statusError}</div>
           )}
           <div className="flex flex-col gap-2">
             <div className="flex gap-2">
-              <button onClick={handleBackupNow} disabled={running || status.syncing}
+              <button onClick={handleBackupNow} disabled={running || isSyncing}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-border hover:bg-accent transition-colors disabled:opacity-50 flex-1">
-                <RefreshCw size={12} className={running || status.syncing ? "animate-spin" : ""} />
-                {running || status.syncing ? "Syncing…" : "Sync Now"}
+                <RefreshCw size={12} className={running || isSyncing ? "animate-spin" : ""} />
+                {running || isSyncing ? "Syncing…" : "Sync Now"}
               </button>
               {useGoogleDrive ? (
                 <button onClick={handleSignOut}

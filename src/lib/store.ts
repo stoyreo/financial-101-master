@@ -759,11 +759,12 @@ export const useStore = create<Store>()(
       importDataXlsx: async (file: File) => {
         let success = false;
         try {
-          const XLSX = require("xlsx");
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const XLSX = require("xlsx") as typeof import("xlsx");
           const buf = await file.arrayBuffer();
           const wb = XLSX.read(buf, { type: "array" });
-          const sheet = (n: string) => wb.Sheets[n] ? XLSX.utils.sheet_to_json<any>(wb.Sheets[n]) : [];
-          const kvToObj = (rows: any[]) => rows.reduce((a, { key, value }) => ({ ...a, [key]: value }), {});
+          const sheet = (n: string): any[] => wb.Sheets[n] ? XLSX.utils.sheet_to_json<any>(wb.Sheets[n]) : [];
+          const kvToObj = (rows: any[]) => rows.reduce((a: Record<string, unknown>, { key, value }: { key: string; value: unknown }) => ({ ...a, [key]: value }), {});
 
           const incomes = sheet("incomes");
           const expenses = sheet("expenses");
@@ -772,7 +773,7 @@ export const useStore = create<Store>()(
           const profile = kvToObj(sheet("profile"));
           const retirement = kvToObj(sheet("retirement"));
           const tax = kvToObj(sheet("tax"));
-          const scenarios = sheet("scenarios").map(r => ({
+          const scenarios = sheet("scenarios").map((r: any) => ({
             ...r, assumptions: JSON.parse(r.assumptionsJSON || "{}"),
           }));
 

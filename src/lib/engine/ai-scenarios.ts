@@ -162,10 +162,9 @@ export function analyzeTaxPlanning(input: TaxPlanningInput): AnalysisResult {
 
   const dividendTax = dividendIncome * 0.1;
 
-  const investments_active = investments.filter(i => i.isActive);
-  const unrealizedLosses = investments_active
-    .filter(i => i.marketValue < (i.purchasePrice || 0))
-    .reduce((s, i) => s + ((i.purchasePrice || 0) - i.marketValue), 0);
+  // InvestmentAccount has no purchasePrice/cost-basis field — unrealized losses
+  // cannot be computed from available data, so we conservatively treat them as 0.
+  const unrealizedLosses = 0;
 
   const taxLossHarvestingSavings = unrealizedLosses * 0.1;
 

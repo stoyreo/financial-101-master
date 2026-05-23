@@ -313,7 +313,7 @@ export default function ScenariosPage() {
                                     <div className="flex items-start justify-between gap-2 mb-1">
                                       <div className="font-semibold text-sm flex-1">{s.name}</div>
                                       {s.riskLevel && (
-                                        <Badge variant="secondary" className="text-[9px] h-5 shrink-0">
+                                        <Badge variant="outline" className="text-[9px] h-5 shrink-0">
                                           {s.riskLevel === "low" ? "🟢" : s.riskLevel === "medium" ? "🟡" : "🔴"}
                                         </Badge>
                                       )}
@@ -435,7 +435,7 @@ export default function ScenariosPage() {
                         <CartesianGrid strokeDasharray="3 3" />
                         <XAxis dataKey="year" />
                         <YAxis />
-                        <Tooltip formatter={(value) => thb(value)} />
+                        <Tooltip formatter={(value) => thb(Number(value))} />
                         <Legend />
                         {comparisonForecasts.map((cf) => (
                           <Line
@@ -548,43 +548,40 @@ export default function ScenariosPage() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <Label>Primary Cluster</Label>
-              <Select value={(formData.clusters?.[0]) || "Wealth Accumulation & Growth"} onValueChange={(v) => setField("clusters", [v])}>
-                <Select.Trigger className="mt-1">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="Wealth Accumulation & Growth">Wealth</Select.Item>
-                  <Select.Item value="Risk Management & Stability">Risk</Select.Item>
-                  <Select.Item value="Income & Compensation">Income</Select.Item>
-                </Select.Content>
+              <Select
+                value={(formData.clusters?.[0]) || "Wealth Accumulation & Growth"}
+                onChange={(e) => setField("clusters", [(e.target as HTMLSelectElement).value])}
+                className="mt-1"
+              >
+                <option value="Wealth Accumulation & Growth">Wealth Accumulation &amp; Growth</option>
+                <option value="Risk Management & Stability">Risk Management &amp; Stability</option>
+                <option value="Income & Compensation">Income &amp; Compensation</option>
               </Select>
             </div>
 
             <div>
               <Label>Risk Level</Label>
-              <Select value={formData.riskLevel || "medium"} onValueChange={(v) => setField("riskLevel", v as "low" | "medium" | "high")}>
-                <Select.Trigger className="mt-1">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="low">Low</Select.Item>
-                  <Select.Item value="medium">Medium</Select.Item>
-                  <Select.Item value="high">High</Select.Item>
-                </Select.Content>
+              <Select
+                value={formData.riskLevel || "medium"}
+                onChange={(e) => setField("riskLevel", (e.target as HTMLSelectElement).value as "low" | "medium" | "high")}
+                className="mt-1"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
               </Select>
             </div>
 
             <div>
               <Label>Time Horizon</Label>
-              <Select value={formData.timeHorizon || "medium"} onValueChange={(v) => setField("timeHorizon", v as "short" | "medium" | "long")}>
-                <Select.Trigger className="mt-1">
-                  <Select.Value />
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="short">1-2 years</Select.Item>
-                  <Select.Item value="medium">3-5 years</Select.Item>
-                  <Select.Item value="long">5+ years</Select.Item>
-                </Select.Content>
+              <Select
+                value={formData.timeHorizon || "medium"}
+                onChange={(e) => setField("timeHorizon", (e.target as HTMLSelectElement).value as "short" | "medium" | "long")}
+                className="mt-1"
+              >
+                <option value="short">1-2 years</option>
+                <option value="medium">3-5 years</option>
+                <option value="long">5+ years</option>
               </Select>
             </div>
           </div>

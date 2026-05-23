@@ -280,7 +280,7 @@ export class GoogleDriveClient {
         {
           method: "POST",
           headers: {
-            Authorization: `${this.token.tokenType} ${this.token.accessToken}`,
+            Authorization: `${this.token!.tokenType} ${this.token!.accessToken}`,
           },
           body: form,
         }
@@ -324,7 +324,7 @@ export class GoogleDriveClient {
         `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query + parentQuery)}&orderBy=createdTime desc&spaces=drive&fields=files(id,name,createdTime,modifiedTime,size)&pageSize=50`,
         {
           headers: {
-            Authorization: `${this.token.tokenType} ${this.token.accessToken}`,
+            Authorization: `${this.token!.tokenType} ${this.token!.accessToken}`,
           },
         }
       );
@@ -369,7 +369,7 @@ export class GoogleDriveClient {
         `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
         {
           headers: {
-            Authorization: `${this.token.tokenType} ${this.token.accessToken}`,
+            Authorization: `${this.token!.tokenType} ${this.token!.accessToken}`,
           },
         }
       );
@@ -397,7 +397,7 @@ export class GoogleDriveClient {
         {
           method: "DELETE",
           headers: {
-            Authorization: `${this.token.tokenType} ${this.token.accessToken}`,
+            Authorization: `${this.token!.tokenType} ${this.token!.accessToken}`,
           },
         }
       );
