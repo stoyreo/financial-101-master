@@ -131,6 +131,9 @@ export async function clearSession() {
   if (!isClient) return;
   sessionStorage.removeItem(SESSION_KEY);
   localStorage.removeItem("fp_current_user");
+  // Clear Google Drive sync status on logout
+  sessionStorage.removeItem("fp_gdrive_status");
+  sessionStorage.removeItem("gdrive_code_verifier");
   // Clear the middleware + sync cookies too
   document.cookie = "fp_session_exists=; path=/; max-age=0; SameSite=Lax";
   document.cookie = "fp_storage_key=; path=/; max-age=0; SameSite=Lax";

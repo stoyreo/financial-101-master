@@ -17,6 +17,8 @@
 
 import { NextResponse } from "next/server";
 import pdfParse from "pdf-parse";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import crypto from "crypto";
 import { v4 as uuid } from "uuid";
 import {
@@ -252,6 +254,13 @@ function parseThaiStatement(text: string): ParsedStatement {
 
 export async function POST(req: Request) {
   try {
+    // Authenticate user
+    const supabase = getSupabaseServer();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { mediaType, data, fileName, activeAccountId } = (await req.json()) as {
       mediaType: string;
       data: string;
@@ -263,6 +272,14 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "activeAccountId_required", message: "activeAccountId is required" },
         { status: 400 },
+      );
+    }
+
+    // Verify activeAccountId belongs to the authenticated user
+    if (activeAccountId !== session.user.id) {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'You cannot import statements for another user account' },
+        { status: 403 }
       );
     }
 

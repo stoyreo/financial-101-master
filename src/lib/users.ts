@@ -25,16 +25,22 @@ export interface AppUser {
 }
 
 const isClient = typeof window !== "undefined";
+
+/**
+ * SECURITY FIX (2026-05-24): Changed from localStorage to sessionStorage.
+ * SessionStorage is cleared on tab close, preventing data leakage across sessions.
+ */
 function safeGet(key: string): string | null {
-  return isClient ? localStorage.getItem(key) : null;
-}
-function safeSet(key: string, val: string): void {
-  if (isClient) localStorage.setItem(key, val);
-}
-function safeRemove(key: string): void {
-  if (isClient) localStorage.removeItem(key);
+  return isClient ? sessionStorage.getItem(key) : null;
 }
 
+function safeSet(key: string, val: string): void {
+  if (isClient) sessionStorage.setItem(key, val);
+}
+
+function safeRemove(key: string): void {
+  if (isClient) sessionStorage.removeItem(key);
+}
 
 export const USERS_KEY = "fp_users_v1";
 export const CURRENT_USER_KEY = "fp_current_user";
@@ -62,16 +68,24 @@ export const DEFAULT_USERS: Omit<AppUser, "passwordHash">[] = [
   },
 ];
 
+/**
+ * SECURITY FIX (2026-05-24): Removed localStorage storage of user registry.
+ * User data should only come from Supabase server-side via /api/admin/users.
+ * This function now returns empty to prevent data leakage across sessions.
+ */
 export function getUsers(): AppUser[] {
-  try {
-    const raw = safeGet(USERS_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch { return []; }
+  // DEPRECATED: Do not use localStorage for user registry.
+  // Fetch from /api/admin/users endpoint instead.
+  return [];
 }
 
+/**
+ * SECURITY FIX (2026-05-24): Disabled localStorage writes.
+ * User data should only be modified server-side via /api/admin/users.
+ */
 export function saveUsers(users: AppUser[]) {
-  safeSet(USERS_KEY, JSON.stringify(users));
+  // DEPRECATED: Do not use localStorage for user registry.
+  // Use /api/admin/users endpoint instead.
 }
 
 export function getUserById(id: string): AppUser | undefined {

@@ -65,6 +65,14 @@ export default function ActualsPage() {
   // into another account's view. The store holds ALL accounts' transactions
   // in a single flat array; the accountId field is the isolation boundary.
   const account = getCurrentAccount();
+  if (!account) {
+    // Not authenticated — this should not happen for a protected page
+    return (
+      <div className="p-6 text-center">
+        <p className="text-destructive">Not authenticated. Please log in again.</p>
+      </div>
+    );
+  }
   const activeAccountId = account.id;
   const transactions = store.transactions.filter(
     t => t.accountId === activeAccountId || !t.accountId  // !t.accountId: legacy rows pre-isolation

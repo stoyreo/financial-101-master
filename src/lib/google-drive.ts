@@ -11,7 +11,6 @@ const SYNC_INTERVAL_MS = 30 * 60 * 1000;
 
 export interface GoogleDriveConfig {
   clientId: string;
-  clientSecret?: string;
   redirectUri: string;
   folderId?: string;
 }
@@ -129,7 +128,7 @@ export function onSyncStatus(cb: (s: SyncStatus) => void) {
 
 function emit(patch: Partial<SyncStatus>) {
   _syncStatus = { ..._syncStatus, ...patch };
-  if (isClient) localStorage.setItem("fp_gdrive_status", JSON.stringify(_syncStatus));
+  if (isClient) sessionStorage.setItem("fp_gdrive_status", JSON.stringify(_syncStatus));
   _listeners.forEach((cb) => cb({ ..._syncStatus }));
 }
 
@@ -159,14 +158,12 @@ export class GoogleDriveClient {
   private async refreshToken(): Promise<boolean> {
     if (!this.token?.refreshToken) return false;
     try {
-      const response = await fetch("https://oauth2.googleapis.com/token", {
+      // 🔐 Call server endpoint instead of Google directly (client-side secret never exposed)
+      const response = await fetch("/api/auth/google-drive-refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client_id: this.config.clientId,
-          client_secret: this.config.clientSecret,
-          refresh_token: this.token.refreshToken,
-          grant_type: "refresh_token",
+          refreshToken: this.token.refreshToken,
         }),
       });
 
@@ -465,7 +462,7 @@ export function initializeGoogleDrive(config: GoogleDriveConfig): GoogleDriveCli
 
 if (isClient) {
   try {
-    const raw = localStorage.getItem("fp_gdrive_status");
+    const raw = sessionStorage.getItem("fp_gdrive_status");
     if (raw) _syncStatus = { ..._syncStatus, ...JSON.parse(raw) };
   } catch {}
 }

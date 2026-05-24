@@ -114,7 +114,7 @@ export default function SyncStatusBar() {
     return () => clearTimeout(t);
   }, [phase]);
 
-  if (!visible && !lastLocal && !lastRemote) return null;
+  if (!visible) return null;
 
   const color =
     phase === "done" ? "bg-green-500" : phase === "error" ? "bg-red-500" : "bg-blue-500";

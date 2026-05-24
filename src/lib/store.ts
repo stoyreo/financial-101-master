@@ -21,7 +21,6 @@ import {
 } from "./seed";
 import { buildDefaultMerchantRules, newMerchantRule } from "./categorize";
 import { loadUserData, persistUserData, saveRemoteUserData, loadRemoteUserData, getEmptySnapshot } from "./users";
-import { getCurrentAccount } from "./accounts";
 import { getSession } from "./auth";
 import { looksLikeDemoData } from "./toyRealData";
 import { generateYearlyForecast, generateMonthlyForecast } from "./engine/forecast";

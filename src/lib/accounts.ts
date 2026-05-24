@@ -18,26 +18,19 @@ export interface Account {
 }
 
 /**
- * Single account for the Financial 101 Master crafted by Toy app (legacy)
- */
-export const MAIN_ACCOUNT: Account = {
-  id: "toy",
-  name: "Toy Theeranan",
-  email: "toy.theeranan@gmail.com",
-  role: "admin",
-  createdAt: "2024-01-01T00:00:00Z",
-};
-
-/**
  * Get the current account based on the authenticated user.
  * 🔐 CRITICAL: Each user has a unique accountId to prevent data leakage.
  * The accountId is used to filter transactions, so different users must have different IDs.
+ *
+ * Returns null if no session — SSR must never silently use a fallback account.
+ * Callers MUST check for null and handle unauthorized access explicitly.
  */
-export function getCurrentAccount(): Account {
+export function getCurrentAccount(): Account | null {
   const session = getSession();
   if (!session) {
-    // Fallback if no session (SSR, etc.)
-    return MAIN_ACCOUNT;
+    // No session = not authenticated. Return null to force error handling.
+    // Never return a hardcoded fallback account (e.g., id="toy") to prevent data leakage.
+    return null;
   }
 
   // 🔐 Use userId as accountId to ensure unique per-user isolation
@@ -51,10 +44,14 @@ export function getCurrentAccount(): Account {
 }
 
 /**
- * Check if current account has required access level
+ * Check if current account has required access level.
+ * Returns false if not authenticated or role is insufficient.
  */
 export function validateAccess(requiredRole: UserRole): boolean {
-  return true; // Always admin
+  const account = getCurrentAccount();
+  if (!account) return false;  // Not authenticated
+  // Check if user's role matches required role (currently only "admin" exists)
+  return account.role === requiredRole;
 }
 
 /**

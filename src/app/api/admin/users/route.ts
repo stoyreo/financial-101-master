@@ -10,6 +10,7 @@
  * an auth user; PATCH with `password` updates (or creates) the auth user.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin, appUserToRow, rowToAppUser, AppUserRow } from "@/lib/supabase/admin";
 
 export const runtime = "nodejs";
@@ -85,6 +86,13 @@ async function upsertAuthUser(
 
 export async function GET(_req: NextRequest) {
   try {
+    // Authenticate user
+    const supabase = getSupabaseServer();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = getSupabaseAdmin();
     const { data, error } = await db
       .from("app_users")
@@ -103,8 +111,24 @@ export async function GET(_req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    // Authenticate user and verify admin role
+    const supabase = getSupabaseServer();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const db = getSupabaseAdmin();
+    const { data: appUser, error: userErr } = await db
+      .from("app_users")
+      .select("role")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    if (userErr || !appUser || appUser.role !== "admin") {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await req.json();
 
     // Bulk replace
     if (Array.isArray(body?.users)) {
@@ -191,14 +215,29 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    // Authenticate user and verify admin role
+    const supabase = getSupabaseServer();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const db = getSupabaseAdmin();
+    const { data: appUser, error: userErr } = await db
+      .from("app_users")
+      .select("role")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    if (userErr || !appUser || appUser.role !== "admin") {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     const body = await req.json();
     const { id, patch } = body ?? {};
     const password = typeof body?.password === "string" ? body.password : "";
     if (!id || typeof id !== "string" || !patch || typeof patch !== "object") {
       return NextResponse.json({ ok: false, error: "id and patch are required" }, { status: 400 });
     }
-
-    const db = getSupabaseAdmin();
     const { data: target, error: getErr } = await db
       .from("app_users")
       .select("*")
@@ -269,6 +308,23 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    // Authenticate user and verify admin role
+    const supabase = getSupabaseServer();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const db = getSupabaseAdmin();
+    const { data: appUser, error: userErr } = await db
+      .from("app_users")
+      .select("role")
+      .eq("id", session.user.id)
+      .maybeSingle();
+    if (userErr || !appUser || appUser.role !== "admin") {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
     let userId = req.nextUrl.searchParams.get("id");
     if (!userId) {
       try {
@@ -285,7 +341,6 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const db = getSupabaseAdmin();
     const { data: target, error: selErr } = await db
       .from("app_users")
       .select("*")
