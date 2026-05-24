@@ -189,11 +189,22 @@ export default function ActualsPage() {
   }, [monthTxns, filterCat, filterSource]);
 
   // Count of LINE transactions across ALL months (for the hint strip)
-  const totalLineTxns = useMemo(() => 
+  const totalLineTxns = useMemo(() =>
     transactions.filter(t => t.source === "line").length,
   [transactions]);
   const lineMonths = useMemo(() => {
     const set = new Set(transactions.filter(t => t.source === "line").map(t => t.billingMonth));
+    return Array.from(set).sort().reverse();
+  }, [transactions]);
+
+  // Count of statement (non-LINE) transactions across ALL months (for the hint strip)
+  const totalStatementTxns = useMemo(() =>
+    transactions.filter(t => t.source !== "line" && t.statementImportId).length,
+  [transactions]);
+  const statementMonths = useMemo(() => {
+    const set = new Set(
+      transactions.filter(t => t.source !== "line" && t.statementImportId).map(t => t.billingMonth)
+    );
     return Array.from(set).sort().reverse();
   }, [transactions]);
 
@@ -691,6 +702,46 @@ export default function ActualsPage() {
                 className="ml-auto underline hover:text-cyan-300 shrink-0"
               >
                 Show LINE only
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Statement transactions cross-month hint */}
+        {totalStatementTxns > 0 && filterSource !== "statement" && (
+          <div className="px-4 pb-0 pt-1">
+            <div className="flex items-center gap-2 text-xs text-blue-400 bg-blue-500/10 rounded-md px-3 py-1.5">
+              <FileText size={12} />
+              <span>
+                {totalStatementTxns} statement transaction{totalStatementTxns === 1 ? "" : "s"} across {statementMonths.length} month{statementMonths.length === 1 ? "" : "s"}
+                {statementMonths.length > 0 && ` (${statementMonths.map(m => ymLabel(m)).join(", ")})`}.
+                {selectedMonth && !statementMonths.includes(selectedMonth) && statementMonths.length > 0 && (
+                  <> Viewing <strong>{ymLabel(selectedMonth)}</strong> — switch to{" "}
+                    {statementMonths.slice(0, 2).map((m, i) => (
+                      <span key={m}>
+                        {i > 0 && " or "}
+                        <button
+                          onClick={() => setSelectedMonth(m)}
+                          className="underline hover:text-blue-300"
+                        >
+                          {ymLabel(m)}
+                        </button>
+                      </span>
+                    ))} to see them.
+                  </>
+                )}
+              </span>
+              <button
+                onClick={() => {
+                  setFilterSource("statement");
+                  // If no statement transactions in current month, jump to the first month that has them
+                  if (selectedMonth && !statementMonths.includes(selectedMonth) && statementMonths.length > 0) {
+                    setSelectedMonth(statementMonths[0]);
+                  }
+                }}
+                className="ml-auto underline hover:text-blue-300 shrink-0"
+              >
+                Show statements only
               </button>
             </div>
           </div>
