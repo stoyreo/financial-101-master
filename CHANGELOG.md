@@ -2,6 +2,99 @@
 
 All notable changes to Financial 101 Master will be documented in this file.
 
+## [3.5.0] - 2026-05-26
+
+### User Authentication & Self-Service Features
+
+#### New Features
+
+**1. User Signup & Registration**
+- New `/signup` page with email + password registration
+- 8+ character password validation with confirm password field
+- Auto-creates AppUser profile on signup with clean initial state
+- Seamless session synthesis and redirect to home page
+- Matches login page styling and user experience
+
+**2. Bank Statement Import & Actuals Tracking**
+- PDF bank statement upload with AI-powered categorization
+- Tested with UOB statements (~80 transactions)
+- Smart deduplication to prevent re-upload processing
+- Monthly budget vs actual comparison view
+- Live expense transaction list with category filtering
+- AI-powered "Cuts" feature for expense reduction suggestions
+- Savings Optimizer with interactive category sliders
+
+**3. New API Endpoints**
+- `POST /api/statements/import` — Upload and process bank statements
+- `POST /api/expenses/suggest-cuts` — AI-generated expense reduction recommendations
+
+#### Security Improvements
+
+**1. Multi-User Data Isolation**
+- Enhanced Sync API (`/api/sync`) with user authentication
+- Users can only access their own `storageKey` (403 Forbidden for unauthorized access)
+- Email notifications route to authenticated user (no hardcoded fallback)
+- Explicit user email in notification payloads
+
+**2. Session & Store Management**
+- Fixed new user data flood: store now clears on signup
+- `synthesizeSession()` clears Zustand store before session creation
+- Signup page explicitly clears sessionStorage before redirect
+- Per-user `storageKey` uniqueness verified via Supabase user ID
+
+#### Bug Fixes
+
+- **New user data inheritance** — Users no longer see previous user's financial data when signing up in same browser session
+- **Store state isolation** — sessionStorage properly cleared between user sessions
+- **Session persistence** — Data isolation maintained across login/logout/re-login cycles
+
+#### Infrastructure & Deployment
+
+- Repo consolidation: `financial-101-master` is now the canonical repository
+- Vercel auto-deployment on `git push origin main`
+- Cloud Firestore sync with Google Drive (legacy system preserved)
+- Cloudflare Workers email notification system deployed
+
+#### Files Added
+
+```
+src/app/signup/page.tsx (350 lines)
+src/lib/categorize.ts (200 lines)
+src/lib/actuals.ts (180 lines)
+src/app/api/statements/import/route.ts (150 lines)
+src/app/api/expenses/suggest-cuts/route.ts (110 lines)
+src/app/expenses/actuals/page.tsx (430 lines)
+src/components/dashboard/SavingsOptimizer.tsx (210 lines)
+```
+
+#### Files Modified
+
+```
+src/lib/auth.ts (store clearing logic added)
+src/lib/store.ts (actuals tracking integration)
+src/lib/users.ts (user profile management)
+src/lib/types.ts (Actuals type definitions)
+src/app/expenses/page.tsx (actuals link added)
+src/app/api/sync/route.ts (authentication check)
+package.json (version bump to 3.5.0)
+```
+
+#### Testing Checklist
+
+- [x] Signup creates new user with clean financial state
+- [x] PDF statement import processes 80+ transactions
+- [x] Category suggestions work via AI
+- [x] Budget vs Actual accurately reflects uploaded data
+- [x] Multi-user isolation prevents data leakage
+- [x] Session clear prevents data flood on re-signup
+- [x] Email notifications deliver to correct user
+
+#### Migration Notes
+
+No breaking changes. All v3.4.0 features remain functional.
+
+---
+
 ## [3.4.0] - 2026-04-26
 
 ### Member Identity & Empty-Start Fixes
