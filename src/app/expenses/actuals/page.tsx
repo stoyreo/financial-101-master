@@ -97,6 +97,7 @@ export default function ActualsPage() {
   const [lineSyncing, setLineSyncing] = useState(false);
   const [lineSyncMsg, setLineSyncMsg] = useState<string | null>(null);
   const [showLinePanel, setShowLinePanel] = useState(false);
+  const [expandedLineSyncDate, setExpandedLineSyncDate] = useState<string | null>(null);
 
   // ── Persist LINE UID to localStorage forever (backup beyond Zustand) ──────
   // Ensures the credential survives store resets, cache clears, etc.
@@ -116,27 +117,27 @@ export default function ActualsPage() {
 
   // ── Auto-start LINE sync when page opens and LINE is connected ─────────────
   // Fires on mount (if already connected) or right after localStorage restore
+  // NOTE: Panel stays hidden; sync happens silently in the background
   const autoSyncedRef = useRef(false);
   useEffect(() => {
     if (lineUserId && !autoSyncedRef.current) {
       autoSyncedRef.current = true;
-      setShowLinePanel(true);
-      // Small delay so the panel renders before the sync request fires
+      // Small delay so store is ready before sync fires
       setTimeout(handleLineSync, 400);
     }
   }, [lineUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Capture LINE UID from the OAuth callback redirect (?line_uid=Uxx…)
-  // and persist it to the store. Also auto-open the sync panel.
+  // and persist it to the store. Show panel only on error.
   useEffect(() => {
     const uid = searchParams.get("line_uid");
     const lineErr = searchParams.get("line_error");
     if (uid) {
       setLineUserId(uid);
-      setShowLinePanel(true);
       // Clean the query param from the URL without a history entry
       const clean = window.location.pathname;
       window.history.replaceState({}, "", clean);
+      // Auto-sync will fire after store is restored
     }
     if (lineErr) {
       setLineSyncMsg(`LINE connection failed (${lineErr}). Please try again.`);
@@ -482,70 +483,90 @@ export default function ActualsPage() {
         <div className="mb-4 px-3 py-2 rounded-md bg-blue-500/10 text-blue-500 text-sm">{importMsg}</div>
       )}
 
-      {/* LINE sync panel */}
-      {showLinePanel && (
-        <Card className="mb-4 border-cyan-500/30 bg-cyan-500/5">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Smartphone size={14} className="text-cyan-500" />
-              Sync from LINE Expense Tracker
-              {lineLastSyncedAt && (
-                <span className="ml-auto text-xs font-normal text-muted-foreground">
-                  Last synced {lineLastSyncedAt.slice(0, 10)}
-                </span>
-              )}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {lineUserId ? (
-              /* Already connected — one-click sync */
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">
-                  Connected as{" "}
-                  <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
-                    {lineUserId.slice(0, 8)}…
-                  </code>
-                </span>
+      {/* LINE sync panel — collapsed by default */}
+      <div className="mb-4">
+        {!showLinePanel && (
+          <div className="flex items-center justify-between text-xs px-3 py-2 rounded-md bg-cyan-500/5 border border-cyan-500/20 hover:bg-cyan-500/10 transition-colors cursor-pointer" onClick={() => setShowLinePanel(true)}>
+            <div className="flex items-center gap-2">
+              <Smartphone size={12} className="text-cyan-500" />
+              <span className="text-muted-foreground">
+                {lineUserId ? `LINE synced • ${lineLastSyncedAt ? `Last: ${lineLastSyncedAt.slice(0, 10)}` : "Ready to sync"}` : "Connect with LINE"}
+              </span>
+            </div>
+            <ChevronRight size={12} className="text-muted-foreground" />
+          </div>
+        )}
+        {showLinePanel && (
+          <Card className="border-cyan-500/30 bg-cyan-500/5">
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Smartphone size={14} className="text-cyan-500" />
+                Sync from LINE Expense Tracker
+                {lineLastSyncedAt && (
+                  <span className="ml-auto text-xs font-normal text-muted-foreground">
+                    Last synced {lineLastSyncedAt.slice(0, 10)}
+                  </span>
+                )}
                 <button
-                  onClick={() => { setLineUserId(""); setLineSyncMsg(null); }}
-                  className="text-[10px] text-muted-foreground hover:text-foreground underline"
-                  title="Disconnect LINE account"
+                  onClick={() => setShowLinePanel(false)}
+                  className="ml-auto p-1 hover:bg-muted rounded-md"
+                  title="Collapse"
                 >
-                  Disconnect
+                  <ChevronRight size={13} className="text-muted-foreground" />
                 </button>
-                <Button
-                  size="sm"
-                  onClick={handleLineSync}
-                  disabled={lineSyncing}
-                  className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0 ml-auto"
-                >
-                  <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
-                  {lineSyncing ? "Syncing…" : "Sync Now"}
-                </Button>
-              </div>
-            ) : (
-              /* Not connected — show LINE OAuth button */
-              <div className="flex items-center gap-3">
-                <p className="text-xs text-muted-foreground flex-1">
-                  Authorize once with LINE to pull transactions automatically.
-                  No UID copy-paste required.
-                </p>
-                <a href={buildLineConnectUrl()} className="inline-flex shrink-0">
-                  <Button size="sm" className="bg-[#06C755] hover:bg-[#05a847] text-white">
-                    <Smartphone size={13} />
-                    Connect with LINE
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {lineUserId ? (
+                /* Already connected — one-click sync */
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">
+                    Connected as{" "}
+                    <code className="bg-muted px-1.5 py-0.5 rounded font-mono">
+                      {lineUserId.slice(0, 8)}…
+                    </code>
+                  </span>
+                  <button
+                    onClick={() => { setLineUserId(""); setLineSyncMsg(null); }}
+                    className="text-[10px] text-muted-foreground hover:text-foreground underline"
+                    title="Disconnect LINE account"
+                  >
+                    Disconnect
+                  </button>
+                  <Button
+                    size="sm"
+                    onClick={handleLineSync}
+                    disabled={lineSyncing}
+                    className="bg-cyan-600 hover:bg-cyan-700 text-white shrink-0 ml-auto"
+                  >
+                    <RefreshCw size={13} className={lineSyncing ? "animate-spin" : ""} />
+                    {lineSyncing ? "Syncing…" : "Sync Now"}
                   </Button>
-                </a>
-              </div>
-            )}
-            {lineSyncMsg && (
-              <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("LINE connection failed") || lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
-                {lineSyncMsg}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+                </div>
+              ) : (
+                /* Not connected — show LINE OAuth button */
+                <div className="flex items-center gap-3">
+                  <p className="text-xs text-muted-foreground flex-1">
+                    Authorize once with LINE to pull transactions automatically.
+                    No UID copy-paste required.
+                  </p>
+                  <a href={buildLineConnectUrl()} className="inline-flex shrink-0">
+                    <Button size="sm" className="bg-[#06C755] hover:bg-[#05a847] text-white">
+                      <Smartphone size={13} />
+                      Connect with LINE
+                    </Button>
+                  </a>
+                </div>
+              )}
+              {lineSyncMsg && (
+                <p className={`mt-2 text-xs ${lineSyncMsg.startsWith("LINE connection failed") || lineSyncMsg.startsWith("Error") ? "text-red-400" : "text-cyan-400"}`}>
+                  {lineSyncMsg}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Month selector + summary stats */}
       <div className="flex items-end gap-4 mb-4 flex-wrap">
@@ -925,51 +946,133 @@ export default function ActualsPage() {
         </div>
       )}
 
-      {/* Statement history */}
+      {/* Statement history — grouped by LINE sync date */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Statement History ({statementImports.length})</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
-            {[...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate)).map(s => (
-              <div key={s.id} className="flex items-center justify-between text-xs p-2 rounded-md hover:bg-muted/50">
-                <div className="flex items-center gap-3">
-                  <FileText size={12} className="text-muted-foreground" />
-                  <span className="font-medium">{ymLabel(s.billingMonth)} · {s.bank}</span>
-                  <span className="text-muted-foreground">{s.fileName}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="tabular-nums">{thb(s.totalCharges)} charged</span>
-                  <span className="text-muted-foreground tabular-nums">{s.transactionCount} txns added</span>
-                  {s.duplicatesSkipped > 0 && (
-                    <span className="text-amber-500 tabular-nums">{s.duplicatesSkipped} dupes skipped</span>
-                  )}
-                  {/* Clear transactions only — keeps record for trend history */}
-                  <button
-                    onClick={() => {
-                      if (confirm(`Clear all transactions for ${ymLabel(s.billingMonth)}? The statement record stays for trend history.`)) {
-                        clearMonthTransactions(s.billingMonth, activeAccountId);
-                      }
-                    }}
-                    className="p-1 hover:bg-amber-500/10 rounded-md"
-                    title="Clear transactions only — keeps statement record for trend history"
-                  >
-                    <RefreshCw size={11} className="text-amber-500" />
-                  </button>
-                  {/* Delete statement + all its transactions entirely */}
-                  <button
-                    onClick={() => {
-                      if (confirm(`Permanently delete the \${ymLabel(s.billingMonth)} \${s.bank} statement and all its transactions? This cannot be undone.`)) {
-                        deleteStatementImport(s.id);
-                      }
-                    }}
-                    className="p-1 hover:bg-destructive/10 rounded-md"
-                    title="Delete statement and all its transactions permanently"
-                  >
-                    <Trash2 size={11} className="text-destructive" />
-                  </button>
-                </div>
+            {useMemo(() => {
+              const sorted = [...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate));
+              const groups: { type: "group" | "single"; date: string; items: typeof statementImports }[] = [];
+              const lineByDate: Record<string, typeof statementImports> = {};
+
+              for (const s of sorted) {
+                if (s.bank === "LINE") {
+                  const date = s.statementDate;
+                  if (!lineByDate[date]) lineByDate[date] = [];
+                  lineByDate[date].push(s);
+                } else {
+                  groups.push({ type: "single", date: s.statementDate, items: [s] });
+                }
+              }
+
+              // Add LINE groups (collapse if multiple on same date)
+              for (const [date, items] of Object.entries(lineByDate).sort().reverse()) {
+                if (items.length > 1) {
+                  groups.unshift({ type: "group", date, items });
+                } else {
+                  groups.unshift({ type: "single", date, items });
+                }
+              }
+
+              return groups;
+            }, [statementImports]).map(group => (
+              <div key={group.date + group.items.length}>
+                {group.type === "group" ? (
+                  /* LINE sync GROUP — collapsible */
+                  <div className="border border-cyan-500/20 rounded-md overflow-hidden">
+                    <button
+                      onClick={() => setExpandedLineSyncDate(expandedLineSyncDate === group.date ? null : group.date)}
+                      className="w-full flex items-center justify-between text-xs p-2 hover:bg-cyan-500/5 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <ChevronRight size={12} className={`text-muted-foreground transition-transform shrink-0 ${expandedLineSyncDate === group.date ? "rotate-90" : ""}`} />
+                        <Smartphone size={11} className="text-cyan-500 shrink-0" />
+                        <span className="font-medium text-cyan-500">{group.items.length} LINE syncs</span>
+                        <span className="text-muted-foreground">{group.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2 ml-auto shrink-0">
+                        <span className="text-muted-foreground tabular-nums text-[10px]">
+                          {group.items.reduce((s, i) => s + i.totalCharges, 0) > 0 ? thb(group.items.reduce((s, i) => s + i.totalCharges, 0)) : ""}
+                        </span>
+                      </div>
+                    </button>
+                    {expandedLineSyncDate === group.date && (
+                      <div className="space-y-0 border-t border-cyan-500/20 bg-cyan-500/3">
+                        {group.items.map(s => (
+                          <div key={s.id} className="flex items-center justify-between text-xs p-2 hover:bg-cyan-500/5 border-b border-cyan-500/10 last:border-b-0">
+                            <div className="flex items-center gap-3 flex-1">
+                              <span className="text-muted-foreground text-[10px] font-mono">{s.statementDate}</span>
+                              <span className="text-muted-foreground">{s.fileName}</span>
+                            </div>
+                            <div className="flex items-center gap-2 ml-auto">
+                              <span className="tabular-nums">{thb(s.totalCharges)}</span>
+                              <span className="text-muted-foreground tabular-nums">{s.transactionCount} txns</span>
+                              {s.duplicatesSkipped > 0 && (
+                                <span className="text-amber-500 tabular-nums text-[10px]">{s.duplicatesSkipped} dupes</span>
+                              )}
+                              <button
+                                onClick={() => {
+                                  if (confirm(`Permanently delete the ${s.fileName} sync and all its transactions? This cannot be undone.`)) {
+                                    deleteStatementImport(s.id);
+                                  }
+                                }}
+                                className="p-1 hover:bg-destructive/10 rounded-md shrink-0"
+                                title="Delete sync and all its transactions"
+                              >
+                                <Trash2 size={10} className="text-destructive" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Regular statement — single row */
+                  group.items.map(s => (
+                    <div key={s.id} className="flex items-center justify-between text-xs p-2 rounded-md hover:bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <FileText size={12} className="text-muted-foreground" />
+                        <span className="font-medium">{ymLabel(s.billingMonth)} · {s.bank}</span>
+                        <span className="text-muted-foreground">{s.fileName}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="tabular-nums">{thb(s.totalCharges)} charged</span>
+                        <span className="text-muted-foreground tabular-nums">{s.transactionCount} txns added</span>
+                        {s.duplicatesSkipped > 0 && (
+                          <span className="text-amber-500 tabular-nums">{s.duplicatesSkipped} dupes skipped</span>
+                        )}
+                        {/* Clear transactions only — keeps record for trend history */}
+                        <button
+                          onClick={() => {
+                            if (confirm(`Clear all transactions for ${ymLabel(s.billingMonth)}? The statement record stays for trend history.`)) {
+                              clearMonthTransactions(s.billingMonth, activeAccountId);
+                            }
+                          }}
+                          className="p-1 hover:bg-amber-500/10 rounded-md"
+                          title="Clear transactions only — keeps statement record for trend history"
+                        >
+                          <RefreshCw size={11} className="text-amber-500" />
+                        </button>
+                        {/* Delete statement + all its transactions entirely */}
+                        <button
+                          onClick={() => {
+                            if (confirm(`Permanently delete the ${ymLabel(s.billingMonth)} ${s.bank} statement and all its transactions? This cannot be undone.`)) {
+                              deleteStatementImport(s.id);
+                            }
+                          }}
+                          className="p-1 hover:bg-destructive/10 rounded-md"
+                          title="Delete statement and all its transactions permanently"
+                        >
+                          <Trash2 size={11} className="text-destructive" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             ))}
           </div>
