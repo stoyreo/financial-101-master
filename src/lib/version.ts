@@ -1,5 +1,5 @@
 export const APP_VERSION = "3.5.0";
-export const BUILD_DATE = "2026-05-18";
+export const BUILD_DATE = "2026-05-26";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -17,12 +17,17 @@ export interface ChangelogEntry {
 export const CHANGELOG: ChangelogEntry[] = [
   {
     version: "3.5.0",
-    date: "2026-05-18",
+    date: "2026-05-26",
     changes: [
-      "Added Google Sign-In as a login option on both the login and signup pages",
-      "Fixed magic link and Google OAuth session initialization — users no longer get bounced back to login after signing in",
-      "New /auth/session-init bridge page properly creates the app session after OAuth redirect",
-      "Updated signup page branding to 'Financial 101 Master crafted by Toy'",
+      "New user signup & registration at /signup with email + password form",
+      "Bank statement import with AI-powered transaction categorization (PDF UOB, KBank, SCB, KTC, TMB)",
+      "Actuals tracking: budget vs actual comparison with monthly trend analysis",
+      "LINE Expense Tracker integration for real-time transaction sync",
+      "Savings Optimizer with interactive category sliders for expense reduction",
+      "Multi-user data isolation: users can only access their own storageKey (403 Forbidden)",
+      "Fixed new user data flood: store now clears properly on signup to prevent cross-user data leakage",
+      "Collapsed LINE sync panel: minimal indicator by default, expands on click for cleaner UI",
+      "Grouped LINE transactions in Statement History: multiple syncs on same date collapse into one row",
     ],
   },
   {
