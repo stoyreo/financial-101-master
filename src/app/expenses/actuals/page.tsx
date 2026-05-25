@@ -26,7 +26,7 @@ import {
 } from "@/components/ui";
 import {
   Upload, AlertTriangle, TrendingDown, Sparkles, FileText, Trash2,
-  RefreshCw, Filter, ChevronRight, Smartphone,
+  RefreshCw, Filter, ChevronRight, Smartphone, Search,
 } from "lucide-react";
 import {
   ResponsiveContainer, ComposedChart, XAxis, YAxis, Tooltip as RTip,
@@ -162,15 +162,17 @@ export default function ActualsPage() {
 
   const [filterCat, setFilterCat] = useState<string>("all");
   const [filterSource, setFilterSource] = useState<"all" | "line" | "statement">("all");
+  const [searchText, setSearchText] = useState<string>("");
   const [savingsTarget, setSavingsTarget] = useState<number>(20000);
 
   // ── Bulk selection ────────────────────────────────────
   const [selectedTxns, setSelectedTxns] = useState<Set<string>>(new Set());
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
-  // Clear selection whenever month or filters change
+  // Clear selection and search whenever month or filters change
   useEffect(() => {
     setSelectedTxns(new Set());
+    setSearchText("");
   }, [selectedMonth, filterCat, filterSource]);
 
   // ── Derived data ─────────────────────────────────────
@@ -189,13 +191,15 @@ export default function ActualsPage() {
     [transactions, selectedMonth]
   );
   const filteredTxns = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
     return monthTxns.filter(t => {
       if (filterCat !== "all" && t.category !== filterCat) return false;
       if (filterSource === "line" && t.source !== "line") return false;
       if (filterSource === "statement" && t.source === "line") return false;
+      if (query && !t.description.toLowerCase().includes(query)) return false;
       return true;
     });
-  }, [monthTxns, filterCat, filterSource]);
+  }, [monthTxns, filterCat, filterSource, searchText]);
 
   // Count of LINE transactions across ALL months (for the hint strip)
   const totalLineTxns = useMemo(() =>
@@ -700,6 +704,17 @@ export default function ActualsPage() {
             Transactions — {selectedMonth ? ymLabel(selectedMonth) : ""} ({filteredTxns.length})
           </CardTitle>
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Search field */}
+            <div className="relative">
+              <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                placeholder="Search transactions…"
+                className="h-8 pl-7 pr-3 text-xs rounded-md border border-input bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring w-48"
+              />
+            </div>
             <Filter size={14} className="text-muted-foreground" />
             {/* Source filter */}
             <Select value={filterSource} onChange={e => setFilterSource(e.target.value as "all" | "line" | "statement")} className="h-8 text-xs w-36">
