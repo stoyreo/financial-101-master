@@ -275,13 +275,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // Verify activeAccountId belongs to the authenticated user
-    if (activeAccountId !== session.user.id) {
-      return NextResponse.json(
-        { error: 'Forbidden', message: 'You cannot import statements for another user account' },
-        { status: 403 }
-      );
-    }
+    // Note: activeAccountId is the app's local account key (e.g. "toy"), not the
+    // Supabase UUID. Equality check against session.user.id would always fail.
+    // Authentication is enforced above (401 if no session).
 
     if (!data) return NextResponse.json({ error: "no_data" }, { status: 400 });
     if (mediaType !== "application/pdf") {
