@@ -164,6 +164,15 @@ export default function ActualsPage() {
   const [filterSource, setFilterSource] = useState<"all" | "line" | "statement">("all");
   const [savingsTarget, setSavingsTarget] = useState<number>(20000);
 
+  // ── Bulk selection ────────────────────────────────────
+  const [selectedTxns, setSelectedTxns] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  // Clear selection whenever month or filters change
+  useEffect(() => {
+    setSelectedTxns(new Set());
+  }, [selectedMonth, filterCat, filterSource]);
+
   // ── Derived data ─────────────────────────────────────
   const rows = useMemo(
     () => budgetVsActual(expenses, transactions, selectedMonth || ""),
@@ -333,6 +342,26 @@ export default function ActualsPage() {
     if (!clientId || typeof window === "undefined") return "#";
     const redirectUri = encodeURIComponent(`${window.location.origin}/auth/line/callback`);
     return `https://access.line.me/oauth2/v2.1/authorize?response_type=code&client_id=${clientId}&redirect_uri=${redirectUri}&state=sync&scope=profile%20openid`;
+  }
+
+  // ── Bulk selection handlers ───────────────────────────
+  function toggleSelectAll() {
+    const allSelected = filteredTxns.length > 0 && filteredTxns.every(t => selectedTxns.has(t.id));
+    setSelectedTxns(allSelected ? new Set() : new Set(filteredTxns.map(t => t.id)));
+  }
+
+  function toggleSelectTxn(id: string) {
+    setSelectedTxns(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function handleBulkDelete() {
+    selectedTxns.forEach(id => deleteTransaction(id));
+    setSelectedTxns(new Set());
+    setShowBulkDeleteConfirm(false);
   }
 
   // ── Empty state: no imports yet ──────────────────────
@@ -747,10 +776,40 @@ export default function ActualsPage() {
           </div>
         )}
         <CardContent>
+          {/* Bulk action bar */}
+          {selectedTxns.size > 0 && (
+            <div className="flex items-center gap-3 mb-3 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/20">
+              <span className="text-sm font-medium text-red-400">
+                {selectedTxns.size} transaction{selectedTxns.size === 1 ? "" : "s"} selected
+              </span>
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => setShowBulkDeleteConfirm(true)}
+              >
+                <Trash2 size={12} /> Delete {selectedTxns.size}
+              </Button>
+              <button
+                onClick={() => setSelectedTxns(new Set())}
+                className="ml-auto text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Clear selection
+              </button>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={filteredTxns.length > 0 && filteredTxns.every(t => selectedTxns.has(t.id))}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer accent-primary"
+                      title="Select all"
+                    />
+                  </th>
                   {["Date", "Description", "Card", "Amount", "Category", ""].map(h => (
                     <th key={h} className="text-left px-3 py-2 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                   ))}
@@ -758,7 +817,15 @@ export default function ActualsPage() {
               </thead>
               <tbody>
                 {filteredTxns.map(t => (
-                  <tr key={t.id} className={`border-b border-border hover:bg-muted/30 ${t.isCredit ? "opacity-60" : ""}`}>
+                  <tr key={t.id} className={`border-b border-border hover:bg-muted/30 ${t.isCredit ? "opacity-60" : ""} ${selectedTxns.has(t.id) ? "bg-red-500/5" : ""}`}>
+                    <td className="px-3 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={selectedTxns.has(t.id)}
+                        onChange={() => toggleSelectTxn(t.id)}
+                        className="cursor-pointer accent-primary"
+                      />
+                    </td>
                     <td className="px-3 py-2 tabular-nums text-xs whitespace-nowrap">
                       {t.postDate}
                       {t.transDate !== t.postDate && (
@@ -816,6 +883,32 @@ export default function ActualsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Bulk delete confirmation modal */}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-card border border-border rounded-xl p-6 max-w-sm w-full mx-4 shadow-xl">
+            <h3 className="text-base font-semibold mb-1">
+              Delete {selectedTxns.size} transaction{selectedTxns.size === 1 ? "" : "s"}?
+            </h3>
+            <p className="text-sm text-muted-foreground mb-5">
+              This will permanently remove the selected transaction{selectedTxns.size === 1 ? "" : "s"} from this account. This cannot be undone.
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => setShowBulkDeleteConfirm(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={handleBulkDelete}
+              >
+                <Trash2 size={13} /> Delete {selectedTxns.size}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Statement history */}
       <Card>
