@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   useStore,
@@ -48,6 +48,7 @@ const STATUS_BADGE = {
 };
 
 export default function ActualsPage() {
+  const router = useRouter();
   const store = useStore();
   const {
     expenses, merchantRules,
@@ -65,11 +66,19 @@ export default function ActualsPage() {
   // into another account's view. The store holds ALL accounts' transactions
   // in a single flat array; the accountId field is the isolation boundary.
   const account = getCurrentAccount();
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!account) {
+      router.push("/login");
+    }
+  }, [account, router]);
+
+  // Show loading while redirecting
   if (!account) {
-    // Not authenticated — this should not happen for a protected page
     return (
       <div className="p-6 text-center">
-        <p className="text-destructive">Not authenticated. Please log in again.</p>
+        <p className="text-muted-foreground">Redirecting to login...</p>
       </div>
     );
   }
