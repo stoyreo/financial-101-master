@@ -1,6 +1,6 @@
 {
   "name": "financial-planner",
-  "version": "3.5.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
