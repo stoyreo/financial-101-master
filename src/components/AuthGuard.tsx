@@ -1,8 +1,10 @@
 "use client";
-
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+
+// Must stay in sync with providers.tsx PUBLIC_PATHS
+const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/auth/line/callback"];
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -10,9 +12,14 @@ interface AuthGuardProps {
 
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    // Public pages bypass session check — render immediately
+    const isPublic = PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p));
+    if (isPublic) { setChecking(false); return; }
+
     const supabase = getSupabaseBrowser();
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -30,7 +37,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     });
 
     return () => subscription.unsubscribe();
-  }, [router]);
+  }, [router, pathname]);
 
   if (checking) {
     return null;
