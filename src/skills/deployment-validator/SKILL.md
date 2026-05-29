@@ -1,6 +1,6 @@
 ---
 name: deployment-validator
-description: Pre-deployment safety checks before pushing to production. Use this whenever the user is about to deploy (git push origin main), or asks "ready to ship?", "validate deployment", "pre-deploy check", "should I deploy?", or wants to verify the codebase is deployment-safe. Checks for hardcoded secrets, shell escape artifacts (\!), TypeScript syntax errors, missing environment variables, database migration compatibility, Supabase auth.users sync, and UAT test results. This skill prevents broken or insecure code from reaching production.
+description: Pre-deployment safety checks before pushing to production. Use this whenever the user is about to deploy (git push origin main), or asks "ready to ship?", "validate deployment", "pre-deploy check", "should I deploy?", or wants to verify the codebase is deployment-safe. Checks for hardcoded secrets, shell escape artifacts (!), TypeScript syntax errors, missing environment variables, database migration compatibility, Supabase auth.users sync, and UAT test results. This skill prevents broken or insecure code from reaching production.
 compatibility: Node.js, bash, access to project root
 ---
 
@@ -13,7 +13,7 @@ This skill performs a comprehensive pre-deployment safety audit of your Financia
 Before running deployment, verify EACH of these:
 
 1. **No hardcoded secrets** — Scan for API keys, database URLs, OAuth secrets in staged files
-2. **No shell escapes** — Check for `\!` artifacts (bash history expansion) in TypeScript files (breaks SWC)
+2. **No shell escapes** — Check for `!` artifacts (bash history expansion) in TypeScript files (breaks SWC)
 3. **Environment variables defined** — All `process.env.*` calls have corresponding `.env.example` entries
 4. **TypeScript builds cleanly** — `npm run build` passes without errors
 5. **Database migrations compatible** — Supabase schema changes don't break existing queries
@@ -56,8 +56,8 @@ A detailed report with:
 ## Remediation Examples
 
 ### Shell escape found in src/lib/auth.ts
-**Problem:** Line 42 has `\!` instead of `!`  
-**Fix:** Edit file, replace `\!` with `!`  
+**Problem:** Line 42 has `!` instead of properly escaped form  
+**Fix:** Edit file, replace escaped sequences with unescaped form  
 **Why:** Bash escaped the `!` when writing via heredoc; must use direct file editor instead
 
 ### Hardcoded secret in backup-config.env
