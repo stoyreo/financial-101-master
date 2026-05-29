@@ -3,6 +3,7 @@ import dynamic from "next/dynamic";
 import "./globals.css";
 import { Providers } from "./providers";
 import SyncStatusBar from "@/components/SyncStatusBar";
+import { AiStatusProvider } from "@/lib/ai-status";
 
 // AutoSync uses browser-only APIs (localStorage via getSession, store subscribe),
 // so render it client-side only.
@@ -25,9 +26,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
       </head>
       <body suppressHydrationWarning style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
-        <Providers>{children}</Providers>
-        <AutoSync />
-        <SyncStatusBar />
+        <AiStatusProvider>
+          <Providers>{children}</Providers>
+          <AutoSync />
+          <SyncStatusBar />
+        </AiStatusProvider>
       </body>
     </html>
   );

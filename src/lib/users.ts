@@ -3,7 +3,7 @@
  * Stored in localStorage under USERS_KEY.
  * Admin (toy) can manage accounts from /accounts page.
  */
-import { sha256 } from "./auth";
+import { sha256 } from "./crypto";
 import { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios } from "./seed";
 import { toyRealData, looksLikeDemoData } from "./toyRealData";
 

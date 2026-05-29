@@ -14,8 +14,9 @@ import { Logo } from "@/components/brand/Logo";
 // import { BackupWidget } from "./BackupWidget";
 import { VersionUpdateNotification } from "../VersionUpdateNotification";
 import { SyncStatusBadge } from "./SyncStatusBadge";
-import { clearSession, getSession, isAdmin } from "@/lib/auth";
+import { getSession, isAdmin } from "@/lib/auth-client";
 import { getUserById } from "@/lib/users";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import {
   LayoutDashboard, User, Users, TrendingUp, CreditCard, PiggyBank,
   Calculator, Sliders, BarChart3, Moon, Sun, Menu, X,
@@ -58,7 +59,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const { profile, recomputeForecast, exportData, exportDataXlsx, importDataXlsx, loadSeedData, reloadScenariosFromSeed, saveUserNamespace, saveUserNamespaceAsync } = useStore();
   const router = useRouter();
-  const handleLogout = () => { clearSession(); router.replace("/login"); };
+  const handleLogout = async () => {
+    const supabase = getSupabaseBrowser();
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
   const age = calcAge(profile.dateOfBirth);
   const session = getSession();
   const admin = isAdmin();

@@ -21,9 +21,16 @@ import {
 } from "./seed";
 import { buildDefaultMerchantRules, newMerchantRule } from "./categorize";
 import { loadUserData, persistUserData, saveRemoteUserData, loadRemoteUserData, getEmptySnapshot } from "./users";
-import { getSession } from "./auth";
+import { getSession } from "./auth-client";
 import { looksLikeDemoData } from "./toyRealData";
 import { generateYearlyForecast, generateMonthlyForecast } from "./engine/forecast";
+import { syncToSupabase, loadFromSupabase } from "./supabase-sync";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 interface Store {
   // ── Data ──────────────────────────────────────────────
@@ -115,6 +122,9 @@ interface Store {
   setRemoteSyncStatus: (status: "idle" | "saving" | "completed" | "error", error?: string) => void;
   setHydratedFromRemote: (v: boolean) => void;
 
+  // ── Timestamp for sync ─────────────────────────────────
+  _localUpdatedAt: string | null;
+
   // ── LINE integration ─────────────────────────────────
   lineUserId: string;
   lineLastSyncedAt: string | null;
@@ -184,6 +194,7 @@ export const useStore = create<Store>()(
       isHydratedFromRemote: false,
       lineUserId: "",
       lineLastSyncedAt: null,
+      _localUpdatedAt: null,
 
       // ── Profile ──────────────────────────────────────
       setProfile: (p) => set((state) => {
@@ -836,11 +847,37 @@ export const useStore = create<Store>()(
         if (typeof window === "undefined") return {
           getItem: () => null, setItem: () => {}, removeItem: () => {},
         };
-        // 🔐 Use sessionStorage instead of localStorage to prevent cross-user data leakage
-        // localStorage persists across browser sessions, causing the new user to see the
-        // previous user's cached financial data. sessionStorage clears when the tab closes.
-        return sessionStorage;
+        return localStorage;
       }),
+      onRehydrateStorage: () => async (state) => {
+        if (!state) return;
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) return;
+
+        const userId = session.user.id;
+        const remote = await loadFromSupabase(userId);
+
+        if (!remote) {
+          syncToSupabase(userId, state);
+          return;
+        }
+
+        const remoteTs = new Date(remote._supabaseUpdatedAt ?? 0).getTime();
+        const localTs  = new Date(state._localUpdatedAt ?? 0).getTime();
+
+        if (remoteTs > localTs) {
+          const { _supabaseUpdatedAt, ...remoteState } = remote;
+          Object.assign(state, {
+            ...remoteState,
+            _localUpdatedAt: remote._supabaseUpdatedAt
+          });
+          console.info('[store] hydrated from Supabase (remote is newer)');
+        } else {
+          syncToSupabase(userId, state);
+          console.info('[store] local is newer — synced up to Supabase');
+        }
+      },
       partialize: (state) => ({
         profile: state.profile,
         incomes: state.incomes,
@@ -859,12 +896,20 @@ export const useStore = create<Store>()(
         isHydratedFromRemote: state.isHydratedFromRemote,
         lineUserId: state.lineUserId,
         lineLastSyncedAt: state.lineLastSyncedAt,
+        _localUpdatedAt: state._localUpdatedAt,
         // Exclude sync status from persisted state
         // (localSyncStatus, remoteSyncStatus, lastLocalSaveTime, lastRemoteSaveTime, lastSyncError)
       }),
     }
   )
 );
+
+// ── Supabase Sync Subscription ────────────────────────────
+useStore.subscribe(async (state) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) return;
+  syncToSupabase(session.user.id, state);
+});
 
 // ── Selectors ─────────────────────────────────────────────
 export const selectActiveScenario = (s: Store) =>

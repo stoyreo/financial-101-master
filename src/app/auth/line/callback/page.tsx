@@ -1,7 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useEffect, Suspense } from "react";
-import { ensureAppUserFromSupabase, synthesizeSession } from "@/lib/auth";
+import { ensureAppUserFromSupabase, synthesizeSession } from "@/lib/auth-client";
 
 function LineCallbackContent() {
   const router = useRouter();

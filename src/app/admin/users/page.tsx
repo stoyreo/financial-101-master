@@ -16,7 +16,7 @@ import {
   type UserRole,
 } from "@/lib/users";
 import { useStore } from "@/lib/store";
-import { changePassword, isAdmin } from "@/lib/auth";
+import { changePassword, isAdmin } from "@/lib/auth-client";
 import { UserPlus, KeyRound, UserX, UserCheck, Trash2, X, RefreshCw } from "lucide-react";
 
 type DialogKind = "add" | "password" | "remove" | null;

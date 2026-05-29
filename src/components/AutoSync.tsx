@@ -23,7 +23,7 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth-client";
 
 const DEBOUNCE_MS = 800;
 

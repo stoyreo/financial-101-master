@@ -5,7 +5,7 @@
  * Each user gets their own account so transactions don't leak between users.
  */
 
-import { getSession } from "./auth";
+import { getSession } from "./auth-client";
 
 export type UserRole = "admin";
 

@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSession, synthesizeSession, ensureAppUserFromSupabase } from "@/lib/auth";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export default function SignupPage() {
@@ -16,7 +15,8 @@ export default function SignupPage() {
   useEffect(() => {
     (async () => {
       // Check if already authenticated
-      const session = getSession();
+      const supabase = getSupabaseBrowser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         router.replace("/");
         return;
@@ -106,34 +106,11 @@ export default function SignupPage() {
         password: password.trim(),
       });
 
-      if (error) {
-        setErrorMsg(error.message || "Failed to create account.");
+      if (error || !data.user) {
+        setErrorMsg(error?.message ?? "Signup failed");
         setState("error");
         return;
       }
-
-      if (!data.user?.email) {
-        setErrorMsg("Failed to retrieve user information.");
-        setState("error");
-        return;
-      }
-
-      // Create/retrieve AppUser and synthesize session
-      const appUser = await ensureAppUserFromSupabase(data.user.email, data.user.id);
-      if (!appUser) {
-        setErrorMsg("User account could not be created. Please contact support.");
-        setState("error");
-        return;
-      }
-
-      // 🔐 Clear any in-memory state from a previous user before activating the new session.
-      // This ensures a brand-new user always starts with clean seed data.
-      try {
-        sessionStorage.removeItem("financial-planner-storage-v3");
-      } catch { /* non-fatal */ }
-
-      // Synthesize the session
-      synthesizeSession(appUser);
 
       // Redirect to home
       router.push("/");

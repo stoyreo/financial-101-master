@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent, Button, Badge, Tabs, TabsList
 import { cn, thb } from "@/lib/utils";
 import { BarChart2, LineChart, Activity, Target, Trash2, Info } from "lucide-react";
 import { v4 as uuid } from "uuid";
-import { getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth-client";
 
 import type { InvestmentAccount } from "@/lib/types";
 import {

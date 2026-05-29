@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getSession, sha256, isAdmin } from "@/lib/auth";
+import { sha256 } from "@/lib/crypto";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { getUsers, saveUsers, updateUser, getStartingSnapshot,
   persistUserData, type AppUser } from "@/lib/users";
 import { Card, CardHeader, CardTitle, CardContent, Button, Input,
@@ -20,11 +21,22 @@ export default function AccountsPage() {
   const [createName, setCreateName] = useState("");
   const [createEmail, setCreateEmail] = useState("");
   const [createPass, setCreatePass] = useState("");
-  const session = getSession();
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isAdmin()) { router.replace("/"); return; }
-    setUsers(getUsers());
+    const supabase = getSupabaseBrowser();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) { router.replace("/login"); return; }
+      const email = session.user.email ?? null;
+      setCurrentUserEmail(email);
+      // Admin check: only known admin emails can access this page
+      const adminEmails = ["toy.theeranan@gmail.com", "toy.theeranan@icloud.com"];
+      if (!email || !adminEmails.includes(email.toLowerCase())) {
+        router.replace("/");
+        return;
+      }
+      setUsers(getUsers());
+    });
   }, []);
 
   const flash = (text: string, type: "success" | "danger" = "success") => {
@@ -106,7 +118,7 @@ export default function AccountsPage() {
 
       <div className="space-y-3">
         {users.map(user => {
-          const isSelf = session?.userId === user.id;
+          const isSelf = currentUserEmail ? user.email.toLowerCase() === currentUserEmail.toLowerCase() : false;
           return (
             <Card key={user.id} className="hover:shadow-md transition-shadow">
               <CardContent className="p-4">

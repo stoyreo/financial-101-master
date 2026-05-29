@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getSession, synthesizeSession, ensureAppUserFromSupabase } from "@/lib/auth";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 
@@ -19,7 +18,8 @@ export default function LoginPage() {
   useEffect(() => {
     (async () => {
       // Check if already authenticated
-      const session = getSession();
+      const supabase = getSupabaseBrowser();
+      const { data: { session } } = await supabase.auth.getSession();
       if (session) {
         router.replace("/");
         return;
@@ -135,30 +135,25 @@ export default function LoginPage() {
         password: password.trim(),
       });
 
-      if (error) {
-        setErrorMsg(error.message || "Invalid email or password.");
+      if (error || !data.user) {
+        setErrorMsg(error?.message ?? "Login failed");
         setState("error");
         return;
       }
 
-      if (!data.user?.email) {
-        setErrorMsg("Failed to retrieve user information.");
-        setState("error");
-        return;
+      try {
+        await fetch("/api/auth/ensure-app-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: data.user.email,
+            supabaseUserId: data.user.id,
+          }),
+        });
+      } catch {
+        // Non-fatal
       }
 
-      // Create/retrieve AppUser and synthesize session
-      const appUser = await ensureAppUserFromSupabase(data.user.email, data.user.id);
-      if (!appUser) {
-        setErrorMsg("User account could not be created. Please contact support.");
-        setState("error");
-        return;
-      }
-
-      // Synthesize the session
-      synthesizeSession(appUser);
-
-      // Redirect to home
       router.push("/");
     } catch (err) {
       setErrorMsg("An error occurred. Try again.");
