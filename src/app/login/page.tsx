@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 
-export default function LoginPage() {
+export default function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
@@ -312,10 +312,10 @@ export default function LoginPage() {
   );
 }
 
-export default function import { useState, useEffect, Suspense } from "react";() {
+export default function LoginPage() {
   return (
     <Suspense>
-      <import { useState, useEffect, Suspense } from "react";Inner />
+      <LoginPageInner />
     </Suspense>
   );
 }

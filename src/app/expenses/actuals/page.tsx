@@ -47,7 +47,7 @@ const STATUS_BADGE = {
   over: { label: "Over budget", color: "bg-red-500/15 text-red-500" },
 };
 
-export default function ActualsPage() {
+export default function ActualsPageInner() {
   const router = useRouter();
   const store = useStore();
   const {
@@ -1092,10 +1092,10 @@ export default function ActualsPage() {
   );
 }
 
-export default function import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";() {
+export default function ActualsPage() {
   return (
     <Suspense>
-      <import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";Inner />
+      <ActualsPageInner />
     </Suspense>
   );
 }
