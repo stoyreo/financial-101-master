@@ -1,4 +1,4 @@
-export const APP_VERSION = "3.6.0";
+export const APP_VERSION = "3.6.1";
 export const BUILD_DATE = "2026-05-30";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
@@ -15,6 +15,14 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.6.1",
+    date: "2026-05-30",
+    changes: [
+      "Fixed remote sync: AuthGuard now hydrates data from the server on login, so changes actually save (resolves stuck 'Not yet hydrated from remote')",
+      "Fixed /api/sync 'Remote: error': server now resolves users by Supabase ID when the auth email differs from the registered account email",
+    ],
+  },
   {
     version: "3.6.0",
     date: "2026-05-30",
