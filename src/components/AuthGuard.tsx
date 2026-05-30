@@ -2,12 +2,36 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { getSession, synthesizeSession } from "@/lib/auth-client";
+import { useStore } from "@/lib/store";
 
 // Must stay in sync with providers.tsx PUBLIC_PATHS
 const PUBLIC_PATHS = ["/login", "/signup", "/auth/callback", "/auth/line/callback"];
 
 interface AuthGuardProps {
   children: React.ReactNode;
+}
+
+/**
+ * Bridge: when a Supabase session exists but the legacy auth-client session
+ * (fp_current_user in sessionStorage) is missing — e.g. after a hard refresh,
+ * OAuth callback, or magic-link login — synthesize the legacy session so that
+ * getCurrentAccount(), loadUserNamespace(), and AutoSync all work correctly.
+ */
+async function bridgeLegacySession(supabaseUserId: string, email: string) {
+  if (getSession()) return; // already set
+  try {
+    const res = await fetch("/api/auth/ensure-app-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, supabaseUserId }),
+    });
+    if (!res.ok) return;
+    const { appUser } = await res.json();
+    if (appUser) synthesizeSession(appUser);
+  } catch {
+    // Non-fatal — app still works via Supabase session
+  }
 }
 
 export function AuthGuard({ children }: AuthGuardProps) {
@@ -22,16 +46,20 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
     const supabase = getSupabaseBrowser();
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         router.replace("/login");
       } else {
+        // Ensure legacy session is always in sync with Supabase session
+        await bridgeLegacySession(session.user.id, session.user.email ?? "");
         setChecking(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session) {
+        // Clear Zustand store so next user doesn't see previous user's data
+        useStore.getState().clearStore?.();
         router.replace("/login");
       }
     });

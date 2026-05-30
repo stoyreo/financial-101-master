@@ -60,6 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, recomputeForecast, exportData, exportDataXlsx, importDataXlsx, loadSeedData, reloadScenariosFromSeed, saveUserNamespace, saveUserNamespaceAsync } = useStore();
   const router = useRouter();
   const handleLogout = async () => {
+    useStore.getState().clearStore?.();
     const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     router.push("/login");

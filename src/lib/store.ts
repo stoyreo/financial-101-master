@@ -137,6 +137,7 @@ interface Store {
   loadUserNamespace: () => void;
   saveUserNamespace: () => void;
   saveUserNamespaceAsync: () => Promise<void>;
+  clearStore: () => void;  // Reset all data — call on logout to prevent cross-user leakage
   exportData: () => string;
   importData: (json: string) => boolean;
   exportDataXlsx: () => Blob;
@@ -687,6 +688,40 @@ export const useStore = create<Store>()(
         state.monthlyForecast = f.monthlyForecast;
       }),
 
+      clearStore: () => {
+        const empty = getEmptySnapshot("");
+        set((state) => {
+          state.profile = empty.profile;
+          state.incomes = empty.incomes;
+          state.expenses = empty.expenses;
+          state.debts = empty.debts;
+          state.investments = empty.investments;
+          state.retirement = empty.retirement;
+          state.tax = empty.tax;
+          state.scenarios = empty.scenarios;
+          state.activeScenarioId = empty.activeScenarioId;
+          state.isSeedLoaded = false;
+          state.transactions = [];
+          state.merchantRules = buildDefaultMerchantRules();
+          state.statementImports = [];
+          state.customExpenseCategories = [];
+          state.yearlyForecast = [];
+          state.monthlyForecast = [];
+          state.localSyncStatus = "idle";
+          state.remoteSyncStatus = "idle";
+          state.lastLocalSaveTime = null;
+          state.lastRemoteSaveTime = null;
+          state.lastSyncError = null;
+          state.isHydratedFromRemote = false;
+          state.lineUserId = "";
+          state.lineLastSyncedAt = null;
+          state._localUpdatedAt = null;
+        });
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("financial-planner-storage-v3");
+        }
+      },
+
       loadSeedData: () => set((state) => {
         state.profile = seedProfile;
         state.incomes = seedIncomes;
@@ -847,7 +882,7 @@ export const useStore = create<Store>()(
         if (typeof window === "undefined") return {
           getItem: () => null, setItem: () => {}, removeItem: () => {},
         };
-        return localStorage;
+        return sessionStorage; // sessionStorage clears on tab close — prevents cross-user data leakage
       }),
       onRehydrateStorage: () => async (state) => {
         if (!state) return;
