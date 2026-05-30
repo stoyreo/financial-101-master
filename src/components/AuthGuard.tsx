@@ -52,6 +52,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
       } else {
         // Ensure legacy session is always in sync with Supabase session
         await bridgeLegacySession(session.user.id, session.user.email ?? "");
+        // Hydrate from remote (/api/sync) once the session is confirmed.
+        // Without this, isHydratedFromRemote stays false and saves are skipped.
+        useStore.getState().loadUserNamespace();
         setChecking(false);
       }
     });
