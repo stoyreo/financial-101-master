@@ -21,7 +21,7 @@ export default function LoginPage() {
       const supabase = getSupabaseBrowser();
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.replace("/");
+        router.replace(searchParams.get("redirectTo") || "/");
         return;
       }
       // Show LINE error details if redirected back from LINE auth failure
@@ -46,7 +46,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(searchParams.get("redirectTo") || "/")}`,
           queryParams: { prompt: "select_account" },
         },
       });
@@ -90,7 +90,7 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(searchParams.get("redirectTo") || "/")}`,
           shouldCreateUser: true,
         },
       });
@@ -154,7 +154,7 @@ export default function LoginPage() {
         // Non-fatal
       }
 
-      router.push("/");
+      router.push(searchParams.get("redirectTo") || "/");
     } catch (err) {
       setErrorMsg("An error occurred. Try again.");
       setState("error");
