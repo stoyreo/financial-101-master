@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.5.0";
-export const BUILD_DATE = "2026-05-26";
+export const APP_VERSION = "3.6.0";
+export const BUILD_DATE = "2026-05-30";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -16,6 +16,22 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "3.6.0",
+    date: "2026-05-30",
+    changes: [
+      "Fixed /expenses/actuals crash for email/password and Google OAuth users",
+      "All auth paths now bridge Supabase session — AutoSync and data loading work correctly",
+      "Logout now clears the Zustand store to prevent cross-user data leakage",
+      "Store switched from localStorage to sessionStorage with one-time data migration",
+      "Signup page now respects ?redirectTo= param",
+      "GET /api/admin/users now requires admin role",
+      "LINE receipt links (/line/view) no longer require login",
+      "Suspense boundaries added to login, signup, and actuals pages",
+      "Removed duplicate Finder files and debug test files from repository",
+      "Personal financial data removed from public repository",
+    ],
+  },
+    {
     version: "3.5.0",
     date: "2026-05-26",
     changes: [

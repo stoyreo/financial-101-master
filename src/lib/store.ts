@@ -882,6 +882,15 @@ export const useStore = create<Store>()(
         if (typeof window === "undefined") return {
           getItem: () => null, setItem: () => {}, removeItem: () => {},
         };
+        // One-time migration: if sessionStorage is empty but localStorage has data,
+        // copy it over so existing users don't lose data after the localStorage→sessionStorage switch.
+        const KEY = "financial-planner-storage-v3";
+        if (!sessionStorage.getItem(KEY)) {
+          const legacy = localStorage.getItem(KEY);
+          if (legacy) {
+            try { sessionStorage.setItem(KEY, legacy); } catch { /* quota */ }
+          }
+        }
         return sessionStorage; // sessionStorage clears on tab close — prevents cross-user data leakage
       }),
       onRehydrateStorage: () => async (state) => {
