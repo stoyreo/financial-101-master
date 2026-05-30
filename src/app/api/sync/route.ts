@@ -43,7 +43,17 @@ async function getAuthenticatedUserStorageKey(req: NextRequest) {
         return { ok: false, error: `database error: ${queryError.message}` };
       }
       if (!userRows) {
-        console.warn("[getAuthenticatedUserStorageKey] User not found in app_users:", supabaseUser.email);
+        // Fallback: look up by supabase_user_id (handles email mismatch,
+        // e.g. toy.theeranan@gmail.com auth vs toy.theeranan@icloud.com row)
+        const { data: byUid } = await adminDb
+          .from("app_users").select("*")
+          .eq("supabase_user_id", supabaseUser.id).maybeSingle();
+        if (byUid) {
+          const appUser = rowToAppUser(byUid as any);
+          if (!appUser.isActive) return { ok: false, error: "unauthorized: inactive" };
+          return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
+        }
+        console.warn("[getAuthenticatedUserStorageKey] Not found:", supabaseUser.email);
         return { ok: false, error: "unauthorized: user not found in app registry" };
       }
       const appUser = rowToAppUser(userRows as any);
