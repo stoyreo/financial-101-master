@@ -719,6 +719,8 @@ export const useStore = create<Store>()(
         });
         if (typeof window !== "undefined") {
           sessionStorage.removeItem("financial-planner-storage-v3");
+          sessionStorage.removeItem("fp_session_data");
+          sessionStorage.removeItem("fp_current_user");
         }
       },
 

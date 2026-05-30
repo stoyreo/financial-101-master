@@ -14,7 +14,7 @@ import { Logo } from "@/components/brand/Logo";
 // import { BackupWidget } from "./BackupWidget";
 import { VersionUpdateNotification } from "../VersionUpdateNotification";
 import { SyncStatusBadge } from "./SyncStatusBadge";
-import { getSession, isAdmin } from "@/lib/auth-client";
+import { getSession, isAdmin, clearSession } from "@/lib/auth-client";
 import { getUserById } from "@/lib/users";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import {
@@ -61,6 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const handleLogout = async () => {
     useStore.getState().clearStore?.();
+    clearSession();
     const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     router.push("/login");

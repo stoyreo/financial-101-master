@@ -1,12 +1,8 @@
 /**
  * CLIENT-SAFE AUTH UTILITIES
- * ──────────────────────────
- * Drop-in replacements for the old auth.ts functions that have been
- * removed or made server-only after the Supabase migration.
- * Safe to import from "use client" components.
  */
 
-import { getCurrentUserId, getUserById, setCurrentUserId, type AppUser } from "./users";
+import { getCurrentUserId, setCurrentUserId, type AppUser } from "./users";
 import { findOrCreateUserByEmail } from "./users";
 export { sha256 } from "./crypto";
 
@@ -19,19 +15,26 @@ export interface Session {
   storageKey: string;
 }
 
+const SESSION_KEY = "fp_session_data";
+
 export function getSession(): Session | null {
+  if (typeof window === "undefined") return null;
   const userId = getCurrentUserId();
   if (!userId) return null;
-  const user = getUserById(userId);
-  if (!user || !user.isActive) return null;
-  return {
-    userId: user.id,
-    username: user.username,
-    role: user.role,
-    email: user.email,
-    displayName: user.displayName,
-    storageKey: user.storageKey,
-  };
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (raw) {
+      const s: Session = JSON.parse(raw);
+      if (s.userId === userId) return s;
+    }
+  } catch { /* corrupt */ }
+  return null;
+}
+
+export function clearSession(): void {
+  if (typeof window === "undefined") return;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+  try { sessionStorage.removeItem("fp_current_user"); } catch {}
 }
 
 export function isAdmin(): boolean {
@@ -39,7 +42,17 @@ export function isAdmin(): boolean {
 }
 
 export function synthesizeSession(user: AppUser, _extras?: Record<string, unknown>): void {
+  if (typeof window === "undefined") return;
   setCurrentUserId(user.id);
+  const session: Session = {
+    userId: user.id,
+    username: (user as any).username || (user.email ?? "").split("@")[0] || "user",
+    role: (user as any).role || "member",
+    email: user.email ?? "",
+    displayName: (user as any).displayName || (user as any).display_name || (user as any).username || (user.email ?? "").split("@")[0] || "user",
+    storageKey: (user as any).storageKey || (user as any).storage_key || `fp_data_${user.id.slice(0, 8)}`,
+  };
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch {}
 }
 
 export async function changePassword(userId: string, newPassword: string): Promise<boolean> {
@@ -49,15 +62,9 @@ export async function changePassword(userId: string, newPassword: string): Promi
     const hash = await sha256(newPassword);
     updateUser(userId, { passwordHash: hash });
     return true;
-  } catch {
-    return false;
-  }
+  } catch { return false; }
 }
 
-/**
- * Client-safe version of ensureAppUserFromSupabase.
- * Finds or creates an AppUser by email. Used in LINE OAuth callback.
- */
 export async function ensureAppUserFromSupabase(
   email: string,
   supabaseUserId: string,
