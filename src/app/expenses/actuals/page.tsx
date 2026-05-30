@@ -47,7 +47,7 @@ const STATUS_BADGE = {
   over: { label: "Over budget", color: "bg-red-500/15 text-red-500" },
 };
 
-export default function ActualsPageInner() {
+function ActualsPageInner() {
   const router = useRouter();
   const store = useStore();
   const {

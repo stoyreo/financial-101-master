@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 
-export default function LoginPageInner() {
+function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
