@@ -243,6 +243,27 @@ function ActualsPageInner() {
       .slice(0, 10);
   }, [monthTxns]);
 
+  const statementGroups = useMemo(() => {
+    const sorted = [...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate));
+    const groups: { type: "group" | "single"; date: string; items: typeof statementImports }[] = [];
+    const lineByDate: Record<string, typeof statementImports> = {};
+    for (const s of sorted) {
+      if (s.bank === "LINE") {
+        const date = s.statementDate;
+        if (!lineByDate[date]) lineByDate[date] = [];
+        lineByDate[date].push(s);
+      } else {
+        groups.push({ type: "single", date: s.statementDate, items: [s] });
+      }
+    }
+    for (const [date, items] of Object.entries(lineByDate).sort().reverse()) {
+      groups.unshift(items.length > 1
+        ? { type: "group", date, items }
+        : { type: "single", date, items });
+    }
+    return groups;
+  }, [statementImports]);
+
   // ── Handlers ─────────────────────────────────────────
   async function handleFile(file: File) {
     setUploading(true);
@@ -962,32 +983,7 @@ function ActualsPageInner() {
         </CardHeader>
         <CardContent>
           <div className="space-y-1">
-            {useMemo(() => {
-              const sorted = [...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate));
-              const groups: { type: "group" | "single"; date: string; items: typeof statementImports }[] = [];
-              const lineByDate: Record<string, typeof statementImports> = {};
-
-              for (const s of sorted) {
-                if (s.bank === "LINE") {
-                  const date = s.statementDate;
-                  if (!lineByDate[date]) lineByDate[date] = [];
-                  lineByDate[date].push(s);
-                } else {
-                  groups.push({ type: "single", date: s.statementDate, items: [s] });
-                }
-              }
-
-              // Add LINE groups (collapse if multiple on same date)
-              for (const [date, items] of Object.entries(lineByDate).sort().reverse()) {
-                if (items.length > 1) {
-                  groups.unshift({ type: "group", date, items });
-                } else {
-                  groups.unshift({ type: "single", date, items });
-                }
-              }
-
-              return groups;
-            }, [statementImports]).map(group => (
+            {statementGroups.map(group => (
               <div key={group.date + group.items.length}>
                 {group.type === "group" ? (
                   /* LINE sync GROUP — collapsible */
