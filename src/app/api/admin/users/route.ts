@@ -86,7 +86,7 @@ async function upsertAuthUser(
 
 export async function GET(_req: NextRequest) {
   try {
-    // Authenticate user
+    // Authenticate user and verify admin role
     const supabase = getSupabaseServer();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -94,6 +94,15 @@ export async function GET(_req: NextRequest) {
     }
 
     const db = getSupabaseAdmin();
+    const { data: callerRow, error: callerErr } = await db
+      .from("app_users")
+      .select("role")
+      .eq("email", session.user.email?.toLowerCase() || "")
+      .maybeSingle();
+    if (callerErr || !callerRow || callerRow.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { data, error } = await db
       .from("app_users")
       .select("*")

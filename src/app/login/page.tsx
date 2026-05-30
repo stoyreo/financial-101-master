@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
@@ -309,5 +309,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function import { useState, useEffect, Suspense } from "react";() {
+  return (
+    <Suspense>
+      <import { useState, useEffect, Suspense } from "react";Inner />
+    </Suspense>
   );
 }

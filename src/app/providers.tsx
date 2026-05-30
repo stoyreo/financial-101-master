@@ -19,6 +19,7 @@ const PUBLIC_PATHS = [
   "/auth/line/callback/",
   "/auth/callback",
   "/auth/callback/",
+  "/line/view",   // Public receipt page linked from LINE bot
 ];
 
 // ssr:false — prevents ANY server-side execution of browser-API-dependent code

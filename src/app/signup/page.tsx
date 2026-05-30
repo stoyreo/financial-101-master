@@ -1,10 +1,11 @@
 "use client";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
-export default function SignupPage() {
+function SignupPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -18,7 +19,7 @@ export default function SignupPage() {
       const supabase = getSupabaseBrowser();
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        router.replace("/");
+        router.replace(searchParams.get("redirectTo") || "/");
         return;
       }
       setReady(true);
@@ -33,7 +34,7 @@ export default function SignupPage() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(searchParams.get("redirectTo") || "/")}`,
           queryParams: { prompt: "select_account" },
         },
       });
@@ -112,8 +113,8 @@ export default function SignupPage() {
         return;
       }
 
-      // Redirect to home
-      router.push("/");
+      // Redirect to intended destination
+      router.push(searchParams.get("redirectTo") || "/");
     } catch (err) {
       setErrorMsg("An error occurred. Try again.");
       setState("error");
@@ -276,5 +277,13 @@ export default function SignupPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense>
+      <SignupPageInner />
+    </Suspense>
   );
 }

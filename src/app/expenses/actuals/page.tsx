@@ -11,7 +11,7 @@
  * duplicates. ALL prior statements are kept for trend analysis.
  */
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -1089,5 +1089,13 @@ export default function ActualsPage() {
       </Card>
 
     </div>
+  );
+}
+
+export default function import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";() {
+  return (
+    <Suspense>
+      <import { useEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";Inner />
+    </Suspense>
   );
 }
