@@ -1,7 +1,7 @@
 /**
  * ZUSTAND STORE
  * ─────────────
- * Central state with localStorage persistence.
+ * Central state with sessionStorage persistence (clears on tab close — prevents cross-user data leakage).
  * All financial data lives here; computed forecasts are derived on demand.
  */
 

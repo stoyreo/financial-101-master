@@ -110,16 +110,19 @@ function ActualsPageInner() {
 
   // ── Persist LINE UID to localStorage forever (backup beyond Zustand) ──────
   // Ensures the credential survives store resets, cache clears, etc.
+  // Key is scoped by userId so different users never share LINE credentials.
   useEffect(() => {
     if (lineUserId) {
-      localStorage.setItem("line_uid_persistent", lineUserId);
+      const lineKey = account?.id ? `line_uid_persistent:${account.id}` : "line_uid_persistent";
+      localStorage.setItem(lineKey, lineUserId);
     }
-  }, [lineUserId]);
+  }, [lineUserId, account?.id]);
 
   // On mount: restore UID from localStorage if the Zustand store is empty
   useEffect(() => {
     if (!lineUserId) {
-      const stored = localStorage.getItem("line_uid_persistent");
+      const lineKey = account?.id ? `line_uid_persistent:${account.id}` : "line_uid_persistent";
+      const stored = localStorage.getItem(lineKey);
       if (stored) setLineUserId(stored);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

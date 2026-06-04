@@ -18,6 +18,34 @@ function toMonthly(amount: number, frequency: string): number {
   }
 }
 
+/**
+ * GET /api/budgets?key=<storageKey>
+ *
+ * DUAL-CALLER DESIGN — do not add hard Supabase session auth here.
+ *
+ * Caller 1 — Cloudflare Workers LINE bot (expense-tracker):
+ *   Runs server-side with no browser/Supabase session. It authenticates by
+ *   supplying the user's storageKey (a UUID-derived token) as the `key` query
+ *   param. The storageKey is:
+ *     • Generated from the user's Supabase UUID (not guessable).
+ *     • Stored exclusively in the LINE bot's KV — never exposed client-side.
+ *   This is intentional and acceptable: the key is effectively a bearer token
+ *   scoped to read-only budget data for one user. Return 404 for unknown keys.
+ *
+ * Caller 2 — Browser clients:
+ *   May call this endpoint directly. They also supply the storageKey, which they
+ *   obtain from their authenticated session. Because the key is UUID-derived,
+ *   an unauthenticated caller cannot enumerate other users' data.
+ *
+ * Rate limiting:
+ *   TODO: Add rate limiting at the edge (Vercel middleware or Cloudflare WAF)
+ *   to prevent brute-force enumeration of storageKeys. A burst limit of ~60 req/min
+ *   per IP is recommended. Do NOT add it here in the route handler — it belongs
+ *   at the infrastructure layer so it applies before the DB is hit.
+ *
+ * DO NOT add a mandatory Supabase session check — that would break the LINE bot
+ * caller, which has no browser session and relies on the storageKey token pattern.
+ */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const storageKey = searchParams.get('key');

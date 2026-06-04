@@ -4,6 +4,8 @@
  * Tracks version updates and logs them in localStorage with timestamps
  */
 
+import { getSession } from "./auth-client";
+
 export interface VersionLog {
   version: string;
   timestamp: string;
@@ -11,14 +13,18 @@ export interface VersionLog {
   notified: boolean;
 }
 
-const STORAGE_KEY = "financial-planner-version-logs";
+function getStorageKey(): string {
+  if (typeof window === "undefined") return "financial-planner-version-logs";
+  const session = getSession();
+  return session ? `financial-planner-version-logs:${session.userId}` : "financial-planner-version-logs";
+}
 
 /**
  * Get all recorded version logs
  */
 export function getVersionLogs(): VersionLog[] {
   if (typeof window === "undefined") return [];
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = localStorage.getItem(getStorageKey());
   return stored ? JSON.parse(stored) : [];
 }
 
@@ -47,7 +53,7 @@ export function registerVersionLog(
   };
 
   logs.unshift(newLog); // Add to front (most recent first)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(logs.slice(0, 50))); // Keep last 50
+  localStorage.setItem(getStorageKey(), JSON.stringify(logs.slice(0, 50))); // Keep last 50
 
   return true;
 }
@@ -61,7 +67,7 @@ export function markVersionNotified(version: string): void {
   const log = logs.find((l) => l.version === version);
   if (log) {
     log.notified = true;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(logs));
+    localStorage.setItem(getStorageKey(), JSON.stringify(logs));
   }
 }
 
@@ -85,5 +91,5 @@ export function getUnnotifiedVersions(): VersionLog[] {
  */
 export function clearVersionLogs(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(getStorageKey());
 }

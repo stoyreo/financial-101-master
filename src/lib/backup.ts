@@ -10,11 +10,19 @@
  * - Backup filename: financeplan_YYYY-MM-DD_HH-MM.json
  */
 
+import { getSession } from "./auth-client";
+
 const IDB_DB    = "fp_backup_db";
 const IDB_STORE = "handles";
 const IDB_KEY   = "onedrive_dir";
 const MAX_FILES = 30;
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+function getBackupStatusKey(): string {
+  if (typeof window === "undefined") return "fp_backup_status";
+  const session = getSession();
+  return session ? `fp_backup_status:${session.userId}` : "fp_backup_status";
+}
 
 let _timer: ReturnType<typeof setInterval> | null = null;
 
@@ -103,7 +111,7 @@ export function onBackupStatus(cb: (s: BackupStatus) => void) {
 
 function emit(patch: Partial<BackupStatus>) {
   _status = { ..._status, ...patch };
-  if (isClient) localStorage.setItem("fp_backup_status", JSON.stringify(_status));
+  if (isClient) localStorage.setItem(getBackupStatusKey(), JSON.stringify(_status));
   _listeners.forEach(cb => cb({ ..._status }));
 }
 
@@ -151,7 +159,7 @@ export function startAutoBackup(getData: () => string) {
   // Load persisted status
   if (!isClient) return;
   try {
-    const raw = localStorage.getItem("fp_backup_status");
+    const raw = localStorage.getItem(getBackupStatusKey());
     if (raw) _status = { ..._status, ...JSON.parse(raw) };
   } catch { /* */ }
 

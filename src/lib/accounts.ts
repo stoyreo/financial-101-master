@@ -39,7 +39,7 @@ export function getCurrentAccount(): Account | null {
     name: session.username,
     email: "", // Not available in session
     role: session.role as UserRole,
-    createdAt: new Date().toISOString(),
+    createdAt: "", // Not available in session — populated when fetched from app_users DB
   };
 }
 

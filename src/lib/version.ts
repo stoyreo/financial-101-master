@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.6.1";
-export const BUILD_DATE = "2026-05-30";
+export const APP_VERSION = "3.7.0";
+export const BUILD_DATE = "2026-06-04";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -15,6 +15,18 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.7.0",
+    date: "2026-06-04",
+    changes: [
+      "Scoped localStorage keys by userId in snapshots, version-log, backup, and LINE UID (prevents cross-user data leakage)",
+      "Fixed migration.ts hardcoded account ID — now uses real session userId with admin-only guard",
+      "Scoped migration flag per-user to prevent skipped migrations on shared browsers",
+      "Fixed accounts.ts: createdAt no longer regenerated on every getCurrentAccount() call",
+      "Updated store.ts comment to reflect sessionStorage (not localStorage) persistence",
+      "Documented /api/budgets dual-caller design (LINE bot vs browser)",
+    ],
+  },
   {
     version: "3.6.1",
     date: "2026-05-30",

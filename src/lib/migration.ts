@@ -1,34 +1,49 @@
 /**
  * MIGRATION: Per-User Isolation for Imported Statements (v3.2)
- * 
- * Assigns all existing transactions without accountId to the Toy admin account.
- * Runs once per session via localStorage flag: f101_migration_v3_2_per_user_imports_done
+ *
+ * Assigns all existing transactions without accountId to the authenticated admin account.
+ * Runs once per user per browser via a user-scoped localStorage flag.
  */
 
 import { useStore } from "@/lib/store";
-import { getToyAccountId } from "@/lib/accounts";
+import { getSession } from "@/lib/auth-client";
 
 /**
- * One-time migration: assign legacy transactions (without accountId) to Toy account.
- * Idempotent via localStorage flag.
+ * One-time migration: assign legacy transactions (without accountId) to the current admin account.
+ * Idempotent via a user-scoped localStorage flag so each user's migration state is independent.
+ *
+ * Security notes:
+ * - Requires an active session; no-ops if unauthenticated.
+ * - Only runs for admin-role users (legacy data belongs to the admin account).
+ * - Uses session.userId (real UUID) instead of the old hardcoded "toy" string.
+ * - FLAG is scoped per user so User A's migration does not suppress User B's.
  */
 export function migrateLegacyImports() {
-  const FLAG = "f101_migration_v3_2_per_user_imports_done";
+  const BASE_FLAG = "f101_migration_v3_2_per_user_imports_done";
 
   // Only run in browser
   if (typeof window === "undefined") return;
 
-  // Already migrated
+  // Require an authenticated session — never migrate without knowing who the user is
+  const session = getSession();
+  if (!session) return;
+
+  // This migration only applies to admin users (legacy data belongs to the admin account)
+  if (session.role !== "admin") return;
+
+  // Scope the flag per user so each user has an independent migration state
+  const FLAG = `${BASE_FLAG}:${session.userId}`;
+
+  // Already migrated for this user
   if (localStorage.getItem(FLAG) === "true") return;
 
   const state = useStore.getState();
-  const accounts = []; // Assuming accounts are available; if not, retry next boot
-  
-  // For now, use "toy" as the hardcoded admin ID since that's the current setup
-  const toyId = "toy"; // getToyAccountId(accounts) would work once multi-account is active
+
+  // Use the real userId (UUID) — never the hardcoded "toy" string
+  const toyId = session.userId;
 
   if (!toyId) {
-    console.warn("Migration: Toy account not found; will retry next boot");
+    console.warn("Migration: session.userId is empty; will retry next boot");
     return;
   }
 
@@ -50,5 +65,5 @@ export function migrateLegacyImports() {
   });
 
   localStorage.setItem(FLAG, "true");
-  console.log(`Migration: assigned ${fixedTx.length} transactions and ${fixedImports.length} imports to Toy account`);
+  console.log(`Migration: assigned ${fixedTx.length} transactions and ${fixedImports.length} imports to account ${toyId}`);
 }
