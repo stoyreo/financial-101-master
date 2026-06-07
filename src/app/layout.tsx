@@ -4,10 +4,17 @@ import "./globals.css";
 import { Providers } from "./providers";
 import SyncStatusBar from "@/components/SyncStatusBar";
 import { AiStatusProvider } from "@/lib/ai-status";
+import { AiSnapshotProvider } from "@/lib/ai-snapshot-context";
 
 // AutoSync uses browser-only APIs (localStorage via getSession, store subscribe),
 // so render it client-side only.
 const AutoSync = dynamic(() => import("@/components/AutoSync"), { ssr: false });
+
+// GlobalAiAvatar drags/throws across the live DOM, polls session state, and
+// reads the Zustand store — all browser-only, so render it client-side only
+// (matches the AutoSync pattern). One avatar, mounted once, available on
+// every page in the app.
+const GlobalAiAvatar = dynamic(() => import("@/components/ai/GlobalAiAvatar"), { ssr: false });
 
 export const metadata: Metadata = {
   title: "Financial 101 Master crafted by Toy",
@@ -27,9 +34,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body suppressHydrationWarning style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
         <AiStatusProvider>
-          <Providers>{children}</Providers>
-          <AutoSync />
-          <SyncStatusBar />
+          <AiSnapshotProvider>
+            <Providers>{children}</Providers>
+            <AutoSync />
+            <SyncStatusBar />
+            <GlobalAiAvatar />
+          </AiSnapshotProvider>
         </AiStatusProvider>
       </body>
     </html>

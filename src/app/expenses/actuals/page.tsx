@@ -40,6 +40,8 @@ import { BUDGET_CATEGORIES } from "@/lib/categorize";
 import type { Transaction, StatementImport, ExpenseItem } from "@/lib/types";
 import { SavingsOptimizer } from "@/components/dashboard/SavingsOptimizer";
 import { toMonthly } from "@/lib/utils";
+import { useRegisterAiSnapshot } from "@/lib/ai-snapshot-context";
+import { buildActualsChatSnapshot, describeSnapshot } from "@/lib/ai-chat-context";
 
 const STATUS_BADGE = {
   ok: { label: "On track", color: "bg-emerald-500/15 text-emerald-500" },
@@ -245,6 +247,24 @@ function ActualsPageInner() {
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 10);
   }, [monthTxns]);
+
+  // ── AI Avatar chat — compact snapshot of what's on screen ─────────────
+  const chatSnapshot = useMemo(() => buildActualsChatSnapshot({
+    billingMonth: selectedMonth || "",
+    monthlyIncome,
+    savingsTarget,
+    rows,
+    trend,
+    topMerchants,
+    monthTotal,
+    monthBudget,
+  }), [selectedMonth, monthlyIncome, savingsTarget, rows, trend, topMerchants, monthTotal, monthBudget]);
+  const snapshotLabel = useMemo(() => describeSnapshot(chatSnapshot), [chatSnapshot]);
+
+  // Hand this page's rich snapshot to the global AI avatar (mounted once in
+  // layout.tsx) — it'll outrank the generic whole-of-plan fallback while the
+  // user is on this page, and auto-unregisters when they navigate away.
+  useRegisterAiSnapshot(chatSnapshot, snapshotLabel);
 
   const statementGroups = useMemo(() => {
     const sorted = [...statementImports].sort((a, b) => b.statementDate.localeCompare(a.statementDate));
@@ -615,14 +635,27 @@ function ActualsPageInner() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        <StatCard title="Actual Spend" value={thb(monthTotal)} subtitle={selectedMonth ? ymLabel(selectedMonth) : ""} icon={TrendingDown} color={monthGap > 0 ? "red" : "green"} />
-        <StatCard title="Budgeted" value={thb(monthBudget)} icon={FileText} color="blue" />
-        <StatCard title={monthGap > 0 ? "Over Budget" : "Under Budget"} value={thb(Math.abs(monthGap))} icon={AlertTriangle} color={monthGap > 0 ? "red" : "green"} />
-        <StatCard title="Over-budget Categories" value={String(overCategories.length)} subtitle={overCategories.slice(0, 3).map(c => c.category).join(", ") || "—"} icon={AlertTriangle} color="amber" />
+        <div data-ai-action="stat-card" data-ai-label="Actual Spend" data-ai-context={`Actual spend for ${selectedMonth ? ymLabel(selectedMonth) : "this month"}: ${thb(monthTotal)} against a budget of ${thb(monthBudget)} (gap ${thb(monthGap)}).`}>
+          <StatCard title="Actual Spend" value={thb(monthTotal)} subtitle={selectedMonth ? ymLabel(selectedMonth) : ""} icon={TrendingDown} color={monthGap > 0 ? "red" : "green"} />
+        </div>
+        <div data-ai-action="stat-card" data-ai-label="Budgeted" data-ai-context={`Total budgeted for ${selectedMonth ? ymLabel(selectedMonth) : "this month"}: ${thb(monthBudget)} across ${rows.length} categories.`}>
+          <StatCard title="Budgeted" value={thb(monthBudget)} icon={FileText} color="blue" />
+        </div>
+        <div data-ai-action="stat-card" data-ai-label={monthGap > 0 ? "Over Budget" : "Under Budget"} data-ai-context={`The household is ${monthGap > 0 ? "over" : "under"} budget by ${thb(Math.abs(monthGap))} this month (actual ${thb(monthTotal)} vs budget ${thb(monthBudget)}).`}>
+          <StatCard title={monthGap > 0 ? "Over Budget" : "Under Budget"} value={thb(Math.abs(monthGap))} icon={AlertTriangle} color={monthGap > 0 ? "red" : "green"} />
+        </div>
+        <div data-ai-action="stat-card" data-ai-label="Over-budget Categories" data-ai-context={`${overCategories.length} categories are over budget this month: ${overCategories.map(c => `${c.category} (${thb(c.actual)} vs ${thb(c.budget)})`).join(", ") || "none"}.`}>
+          <StatCard title="Over-budget Categories" value={String(overCategories.length)} subtitle={overCategories.slice(0, 3).map(c => c.category).join(", ") || "—"} icon={AlertTriangle} color="amber" />
+        </div>
       </div>
 
       {/* Trend chart */}
-      <Card className="mb-6">
+      <Card
+        className="mb-6"
+        data-ai-action="chart"
+        data-ai-label="Monthly Spend Evolution"
+        data-ai-context={`Monthly spend trend over the last ${trend.length} months: ${trend.slice(-6).map(t => `${t.label} ${thb(Math.round(t.total))}`).join(", ")}. Current monthly budget reference line: ${thb(monthBudget)}.`}
+      >
         <CardHeader>
           <CardTitle className="text-sm">Monthly Spend Evolution (last {trend.length} months)</CardTitle>
         </CardHeader>
@@ -705,7 +738,13 @@ function ActualsPageInner() {
             </thead>
             <tbody>
               {rows.map(r => (
-                <tr key={r.category} className="border-b border-border hover:bg-muted/30">
+                <tr
+                  key={r.category}
+                  className="border-b border-border hover:bg-muted/30"
+                  data-ai-action="table-row"
+                  data-ai-label={`${r.category} budget row`}
+                  data-ai-context={`${r.category}${r.isEssential ? " (essential)" : ""}: budget ${thb(r.budget)}, actual ${thb(r.actual)}, ${r.gap > 0 ? "over" : "under"} by ${thb(Math.abs(r.gap))}, ${(r.pctUsed * 100).toFixed(0)}% used, status ${r.status}.`}
+                >
                   <td className="px-3 py-2">
                     <div className="font-medium">{r.category}</div>
                     {r.isEssential && <div className="text-xs text-muted-foreground">Essential</div>}
@@ -1086,7 +1125,6 @@ function ActualsPageInner() {
           </div>
         </CardContent>
       </Card>
-
     </div>
   );
 }
