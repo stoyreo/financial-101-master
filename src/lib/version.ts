@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.7.0";
-export const BUILD_DATE = "2026-06-04";
+export const APP_VERSION = "3.8.0";
+export const BUILD_DATE = "2026-06-07";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -15,6 +15,15 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.8.0",
+    date: "2026-06-07",
+    changes: [
+      "Fin, the AI avatar, is now available app-wide — one floating 'Ask Fin' launcher (drag, throw, and live Claude streaming chat) mounted globally instead of only on Actuals",
+      "Pages can register their own financial snapshot for Fin to reason about (e.g. Actuals hands over its budget-vs-actual data); other pages fall back to a generic whole-of-plan snapshot (income, expenses, debts, investments, net worth)",
+      "Fixed LINE sign-in redirect loop: middleware was treating /auth/line/callback as a protected route (only /auth/callback was allowlisted) and bouncing the OAuth redirect back to /login before the code could be exchanged — now all /auth/* callback routes stay reachable pre-session",
+    ],
+  },
   {
     version: "3.7.0",
     date: "2026-06-04",
