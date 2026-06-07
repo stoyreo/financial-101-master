@@ -36,7 +36,15 @@ export async function middleware(request: NextRequest) {
 
   const { data: { session } } = await supabase.auth.getSession();
   const { pathname } = request.nextUrl;
-  const publicPaths = ["/login", "/signup", "/auth/callback", "/api/", "/_next/", "/favicon.ico", "/line/view"];
+  // NOTE: "/auth/" (not just "/auth/callback") so EVERY OAuth landing route —
+  // Google/magic-link (/auth/callback) AND LINE (/auth/line/callback), plus
+  // any future provider — stays reachable before a Supabase session exists.
+  // Bug fixed 2026-06-07: "/auth/callback" alone didn't match
+  // "/auth/line/callback" (different string prefix), so the middleware was
+  // bouncing the LINE OAuth redirect to /login?code=...&state=...&redirectTo=
+  // before the callback page could ever exchange the code — users got stuck
+  // looping back to the login screen after approving LINE sign-in.
+  const publicPaths = ["/login", "/signup", "/auth/", "/api/", "/_next/", "/favicon.ico", "/line/view"];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   if (!session && !isPublic) {
