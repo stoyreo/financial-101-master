@@ -13,6 +13,7 @@ export default function ProfilePage() {
   const { profile, setProfile } = useStore();
   const [form, setForm] = useState({ ...profile });
   const [saved, setSaved] = useState(false);
+  const [passkeyMsg, setPasskeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const age = calcAge(form.dateOfBirth);
   const yearsToRetirement = Math.max(0, form.retirementAge - age);
@@ -216,13 +217,18 @@ export default function ProfilePage() {
             <p className="text-xs text-muted-foreground">
               Register your Mac&apos;s Touch ID as a passkey so you can sign in with a fingerprint instead of a password.
             </p>
+            {passkeyMsg && (
+              <div className={`text-xs rounded-lg px-3 py-2 ${passkeyMsg.ok ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400" : "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400"}`}>
+                {passkeyMsg.text}
+              </div>
+            )}
             <TouchIDButton
               mode="register"
               onSuccess={() => {
-                setSaved(true);
-                setTimeout(() => setSaved(false), 3000);
+                setPasskeyMsg({ ok: true, text: "Touch ID registered! You can now sign in with your fingerprint." });
+                setTimeout(() => setPasskeyMsg(null), 5000);
               }}
-              onError={(msg) => console.error("[Passkey]", msg)}
+              onError={(msg) => setPasskeyMsg({ ok: false, text: msg })}
             />
           </CardContent>
         </Card>

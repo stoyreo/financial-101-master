@@ -159,7 +159,13 @@ export function usePasskey() {
 
       return true;
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Touch ID sign-in failed");
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+          ? String((e as { message: unknown }).message)
+          : "Touch ID sign-in failed";
+      setError(msg);
       return false;
     } finally {
       setLoading(false);

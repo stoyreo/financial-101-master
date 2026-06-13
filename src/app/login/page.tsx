@@ -279,7 +279,19 @@ function LoginPageInner() {
             mode="login"
             disabled={state === "loading"}
             onSuccess={() => router.push(searchParams.get("redirectTo") || "/")}
-            onError={(msg) => { setErrorMsg(msg); setState("error"); }}
+            onError={(msg) => {
+              const isNotRegistered =
+                msg.toLowerCase().includes("no passkey") ||
+                msg.toLowerCase().includes("not found") ||
+                msg.toLowerCase().includes("no credentials") ||
+                msg.toLowerCase().includes("allow");
+              setErrorMsg(
+                isNotRegistered
+                  ? "No Touch ID set up yet. Sign in with email first, then go to Profile → Set up Touch ID."
+                  : "Touch ID failed — try another sign-in method."
+              );
+              setState("error");
+            }}
           />
 
           <button
