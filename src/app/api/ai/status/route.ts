@@ -1,61 +1,27 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { probeProviders } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
-export const revalidate = 300;
+// Don't statically cache: local Ollama availability changes as the user's
+// machine sleeps/wakes. We still send a short s-maxage so the client poll
+// (every 10 min) doesn't hammer the model.
+export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const probe = await probeProviders();
 
-  if (!apiKey) {
-    return NextResponse.json(
-      { available: false, reason: "ANTHROPIC_API_KEY not configured" },
-      { status: 200 }
-    );
-  }
-
-  const client = new Anthropic({ apiKey });
-
-  try {
-    await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1,
-      messages: [{ role: "user", content: "ping" }],
-    });
-
-    return NextResponse.json(
-      { available: true },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-        },
-      }
-    );
-  } catch (err: unknown) {
-    const error = err as { status?: number; message?: string };
-    const creditExhausted =
-      error?.status === 400 &&
-      typeof error?.message === "string" &&
-      error.message.toLowerCase().includes("credit balance");
-
-    const overloaded = error?.status === 529;
-
-    return NextResponse.json(
-      {
-        available: false,
-        reason: creditExhausted
-          ? "credits_exhausted"
-          : overloaded
-          ? "overloaded"
-          : `api_error_${error?.status ?? "unknown"}`,
+  return NextResponse.json(
+    {
+      available: probe.available,
+      provider: probe.provider,
+      model: probe.model,
+      reason: probe.reason,
+    },
+    {
+      status: 200,
+      headers: {
+        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=60",
       },
-      {
-        status: 200,
-        headers: {
-          "Cache-Control": "public, s-maxage=300, stale-while-revalidate=60",
-        },
-      }
-    );
-  }
+    }
+  );
 }

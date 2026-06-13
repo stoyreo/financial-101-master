@@ -9,7 +9,7 @@
  */
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AiUnavailableError, extractJson } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -45,11 +45,6 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { scenario, baseProjection, scenarioProjection, profile } = body ?? {};
-
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return aiUnavailable("no_api_key", "ANTHROPIC_API_KEY is not configured.", 503);
-    }
 
     // Extract summary stats from projection arrays
     const baseFinal = Array.isArray(baseProjection) ? baseProjection[baseProjection.length - 1] : 0;
@@ -93,19 +88,14 @@ Milestone years:
 
 Analyze this scenario thoroughly. Return strict JSON only.`;
 
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2500,
+    const { text } = await aiComplete({
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 2500,
+      json: true,
+      claudeModel: "claude-sonnet-4-6",
     });
-
-    const text = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as any).text)
-      .join("");
-    const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    const jsonStr = extractJson(text);
 
     let parsed: any;
     try {
@@ -120,6 +110,9 @@ Analyze this scenario thoroughly. Return strict JSON only.`;
     return NextResponse.json({ ...parsed, source: "ai" });
   } catch (e: any) {
     console.error("scenario-analysis error:", e);
+    if (e instanceof AiUnavailableError) {
+      return aiUnavailable(e.reason, e.message, 503);
+    }
     const raw = String(e?.message ?? "");
     if (/credit balance is too low/i.test(raw) || /insufficient_quota/i.test(raw)) {
       return aiUnavailable("insufficient_credits", "Anthropic credits exhausted.", 402);

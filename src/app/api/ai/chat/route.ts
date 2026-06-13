@@ -33,7 +33,7 @@
  * "local insight" mode instead of hanging on a broken stream.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,11 +112,6 @@ export async function POST(req: Request) {
     return jsonError(400, "bad_request", "No messages provided.");
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return jsonError(503, "no_api_key", "ANTHROPIC_API_KEY is not configured. The avatar will use local insights instead.");
-  }
-
   // Fold context/action into the *last* user turn only — keeps prior turns
   // clean for the model and avoids re-sending the (potentially large)
   // snapshot on every message in the conversation.
@@ -128,55 +123,33 @@ export async function POST(req: Request) {
     };
   });
 
-  const client = new Anthropic({ apiKey });
-
-  let stream: ReturnType<Anthropic["messages"]["stream"]>;
+  // Default provider is the user's local Ollama Gemma 4; Claude is the
+  // automatic fallback (see src/lib/ai-provider.ts). If neither is reachable
+  // we return a JSON error so the panel drops to its offline "local insight"
+  // mode instead of hanging on a broken stream.
+  let stream: ReadableStream<Uint8Array>;
+  let source: string;
   try {
-    stream = client.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1024,
+    const result = await aiStream({
       system: SYSTEM_PROMPT,
-      messages: apiMessages as any,
+      messages: apiMessages,
+      maxTokens: 1024,
+      claudeModel: "claude-sonnet-4-6",
     });
-  } catch (e: any) {
-    return jsonError(500, "stream_init_failed", String(e?.message ?? "Failed to start AI stream."));
+    stream = result.stream;
+    source = result.source;
+  } catch (e) {
+    if (e instanceof AiUnavailableError) {
+      return jsonError(503, e.reason, e.message);
+    }
+    return jsonError(500, "stream_init_failed", String((e as any)?.message ?? "Failed to start AI stream."));
   }
 
-  const encoder = new TextEncoder();
-  const body_stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        stream.on("text", (delta: string) => {
-          controller.enqueue(encoder.encode(delta));
-        });
-        await stream.finalMessage();
-        controller.close();
-      } catch (e: any) {
-        const raw = String(e?.message ?? "");
-        // Surface a readable in-band error so the UI can show *something*
-        // even mid-stream (better than a silent cutoff).
-        let note = "\n\n_⚠️ The connection to Claude dropped before finishing. Please try again._";
-        if (/credit balance is too low|insufficient_quota/i.test(raw)) {
-          note = "\n\n_⚠️ Anthropic credits are exhausted — switching to local insights would help here._";
-        } else if (/invalid x-api-key|authentication/i.test(raw)) {
-          note = "\n\n_⚠️ AI authentication failed server-side. Local insights are still available._";
-        } else if (/rate limit|429/i.test(raw)) {
-          note = "\n\n_⚠️ Claude is rate-limiting requests right now — give it a moment and try again._";
-        }
-        controller.enqueue(encoder.encode(note));
-        controller.close();
-      }
-    },
-    cancel() {
-      stream.controller.abort();
-    },
-  });
-
-  return new Response(body_stream, {
+  return new Response(stream, {
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "cache-control": "no-store",
-      "x-ai-source": "claude-live",
+      "x-ai-source": source,
     },
   });
 }

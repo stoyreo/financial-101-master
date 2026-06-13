@@ -11,7 +11,7 @@
  * Response: plain text stream of the insight sentence.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -39,11 +39,6 @@ export async function POST(req: Request) {
       presetName = "Custom",
     } = body ?? {};
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return aiUnavailable("no_api_key", "ANTHROPIC_API_KEY is not configured.", 503);
-    }
-
     const delta = scenarioPortfolioFinalValue - basePortfolioFinalValue;
     const pct = basePortfolioFinalValue > 0
       ? ((delta / basePortfolioFinalValue) * 100).toFixed(1)
@@ -66,42 +61,26 @@ Delta: ${delta >= 0 ? "+" : ""}฿${Math.round(delta / 1000)}K (${pct}%)
 Per-account breakdown (largest delta first):
 ${accountLines}`;
 
-    const client = new Anthropic({ apiKey });
-
-    const stream = client.messages.stream({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 80,
+    const { stream, source } = await aiStream({
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 80,
+      claudeModel: "claude-haiku-4-5-20251001",
     });
 
-    const encoder = new TextEncoder();
-    const readable = new ReadableStream({
-      async start(controller) {
-        try {
-          for await (const event of stream) {
-            if (
-              event.type === "content_block_delta" &&
-              event.delta.type === "text_delta"
-            ) {
-              controller.enqueue(encoder.encode(event.delta.text));
-            }
-          }
-        } finally {
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(readable, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Transfer-Encoding": "chunked",
         "Cache-Control": "no-cache",
+        "x-ai-source": source,
       },
     });
   } catch (e: any) {
     console.error("quick-insight error:", e);
+    if (e instanceof AiUnavailableError) {
+      return aiUnavailable(e.reason, e.message, 503);
+    }
     const raw = String(e?.message ?? "");
     if (/credit balance is too low/i.test(raw) || /insufficient_quota/i.test(raw)) {
       return aiUnavailable("insufficient_credits", "Anthropic credits exhausted.", 402);

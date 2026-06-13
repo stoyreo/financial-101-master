@@ -32,7 +32,7 @@
  */
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AiUnavailableError, extractJson } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -96,27 +96,14 @@ ${snapshot.atRetirement ? `- At retirement (${snapshot.atRetirement.year}, age $
 Return JSON exactly matching:
 ${SCHEMA}`;
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ai_unavailable", reason: "no_api_key", message: "ANTHROPIC_API_KEY is not configured." },
-        { status: 503 },
-      );
-    }
-
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1200,
+    const { text, source } = await aiComplete({
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 1200,
+      json: true,
+      claudeModel: "claude-haiku-4-5-20251001",
     });
-
-    const text = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as any).text)
-      .join("");
-    const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    const jsonStr = extractJson(text);
 
     let parsed: any;
     try { parsed = JSON.parse(jsonStr); }
@@ -127,9 +114,15 @@ ${SCHEMA}`;
       );
     }
 
-    return NextResponse.json({ ...parsed, source: "ai", model: "claude-haiku-4-5", generatedAt: new Date().toISOString() });
+    return NextResponse.json({ ...parsed, source: "ai", provider: source, generatedAt: new Date().toISOString() });
   } catch (e: any) {
     console.error("coach/forecast error:", e);
+    if (e instanceof AiUnavailableError) {
+      return NextResponse.json(
+        { error: "ai_unavailable", reason: e.reason, message: e.message },
+        { status: 503 },
+      );
+    }
     const raw = String(e?.message ?? "");
     if (/credit balance is too low/i.test(raw) || /insufficient_quota/i.test(raw)) {
       return NextResponse.json(

@@ -26,7 +26,7 @@
  */
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, AiUnavailableError, extractJson } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -91,27 +91,14 @@ ${recentMonths.map((m: any) => `- ${m.ym}: ฿${Math.round(m.total).toLocaleStri
 Return JSON exactly matching this schema:
 ${SCHEMA}`;
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "ai_unavailable", reason: "no_api_key", message: "ANTHROPIC_API_KEY is not configured. Use Local Scan instead." },
-        { status: 503 },
-      );
-    }
-
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
+    const { text, source } = await aiComplete({
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 1500,
+      json: true,
+      claudeModel: "claude-haiku-4-5-20251001",
     });
-
-    const text = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as any).text)
-      .join("");
-    const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    const jsonStr = extractJson(text);
 
     let parsed: any;
     try { parsed = JSON.parse(jsonStr); }
@@ -122,9 +109,15 @@ ${SCHEMA}`;
       );
     }
 
-    return NextResponse.json({ ...parsed, source: "ai" });
+    return NextResponse.json({ ...parsed, source: "ai", provider: source });
   } catch (e: any) {
     console.error("suggest-cuts error:", e);
+    if (e instanceof AiUnavailableError) {
+      return NextResponse.json(
+        { error: "ai_unavailable", reason: e.reason, message: `${e.message} Use Local Scan instead.` },
+        { status: 503 },
+      );
+    }
     const raw = String(e?.message ?? "");
     // Anthropic credit / billing exhaustion → 402
     if (/credit balance is too low/i.test(raw) || /insufficient_quota/i.test(raw)) {

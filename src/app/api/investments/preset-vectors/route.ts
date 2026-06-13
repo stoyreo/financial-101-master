@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, extractJson } from "@/lib/ai-provider";
 import { PVDMPFEQ, fundSummaryForPrompt } from "@/lib/fund-registry";
 
 export const dynamic = "force-dynamic";
@@ -60,11 +60,6 @@ const FALLBACK_VECTORS = {
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ ...FALLBACK_VECTORS, source: "fallback_no_key" });
-    }
-
     const today = new Date().toISOString().slice(0, 10);
 
     const userPrompt = `Today is ${today}. Generate Bull/Bear/Recession return-shift vectors for a Thai retail investor
@@ -72,19 +67,14 @@ holding PVD, RMF/SSF equity funds, brokerage accounts, savings, and crypto.
 Consider current global interest rate environment, Thai baht dynamics, SET valuation, and global equity cycle.
 Return strict JSON only.`;
 
-    const client = new Anthropic({ apiKey });
-    const msg = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 600,
+    const { text } = await aiComplete({
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 600,
+      json: true,
+      claudeModel: "claude-sonnet-4-6",
     });
-
-    const text = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as any).text)
-      .join("");
-    const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    const jsonStr = extractJson(text);
 
     let parsed: any;
     try {

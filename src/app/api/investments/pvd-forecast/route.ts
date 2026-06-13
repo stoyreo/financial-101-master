@@ -32,7 +32,7 @@
  */
 
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiComplete, extractJson } from "@/lib/ai-provider";
 import { PVDMPFEQ, fundSummaryForPrompt } from "@/lib/fund-registry";
 
 export const dynamic = "force-dynamic";
@@ -102,11 +102,6 @@ Return STRICT JSON — no markdown fences, no prose outside the JSON:
 // ── Route handler ─────────────────────────────────────────────────────────────
 export async function POST() {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ ...FALLBACK, source: "fallback_no_key" });
-    }
-
     const today = new Date().toISOString().slice(0, 10);
     const fundSummary = fundSummaryForPrompt(PVDMPFEQ);
 
@@ -125,36 +120,22 @@ Produce the best-estimate forward annual return for this fund, with uncertainty 
 
 Return strict JSON only — no prose, no markdown.`;
 
-    const client = new Anthropic({ apiKey });
+    const { text: rawText } = await aiComplete({
+      system: SYSTEM,
+      messages: [{ role: "user", content: userPrompt }],
+      maxTokens: 800,
+      json: true,
+      claudeModel: "claude-sonnet-4-6",
+    });
 
-    const { data: msg, response } = await client.messages
-      .create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 800,
-        system: SYSTEM,
-        messages: [{ role: "user", content: userPrompt }],
-      })
-      .withResponse();
+    // Token usage / rate-limit headers aren't exposed through the unified
+    // provider (and don't apply to local Ollama), so report them as null.
+    const inputTokens: number | null = null;
+    const outputTokens: number | null = null;
+    const remainingTokens: number | null = null;
+    const tokenLimit: number | null = null;
 
-    // Extract usage from response
-    const inputTokens = msg.usage.input_tokens ?? null;
-    const outputTokens = msg.usage.output_tokens ?? null;
-
-    // Try to extract rate-limit headers
-    let remainingTokens: number | null = null;
-    let tokenLimit: number | null = null;
-    const headers = response.headers;
-    const remaining = headers.get("anthropic-ratelimit-tokens-remaining");
-    const limit = headers.get("anthropic-ratelimit-tokens-limit");
-    if (remaining) remainingTokens = parseInt(remaining, 10);
-    if (limit) tokenLimit = parseInt(limit, 10);
-
-    const rawText = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as { type: "text"; text: string }).text)
-      .join("");
-
-    const jsonStr = rawText.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    const jsonStr = extractJson(rawText);
 
     let parsed: Record<string, unknown>;
     try {
