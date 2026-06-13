@@ -3,6 +3,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
+import { TouchIDButton } from "@/components/TouchIDButton";
 
 function LoginPageInner() {
   const router = useRouter();
@@ -273,6 +274,13 @@ function LoginPageInner() {
               <span className="bg-card px-2 text-muted-foreground">Fast track</span>
             </div>
           </div>
+
+          <TouchIDButton
+            mode="login"
+            disabled={state === "loading"}
+            onSuccess={() => router.push(searchParams.get("redirectTo") || "/")}
+            onError={(msg) => { setErrorMsg(msg); setState("error"); }}
+          />
 
           <button
             type="button"

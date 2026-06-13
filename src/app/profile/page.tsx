@@ -7,6 +7,7 @@ import {
   Select, Textarea, Switch, Separator, StatCard, PageHeader, Badge, Alert
 } from "@/components/ui";
 import { User, Calendar, Target, Shield, Save, RefreshCw, AlertTriangle, CheckCircle } from "lucide-react";
+import { TouchIDButton } from "@/components/TouchIDButton";
 
 export default function ProfilePage() {
   const { profile, setProfile } = useStore();
@@ -201,6 +202,28 @@ export default function ProfilePage() {
             <Button className="w-full" onClick={handleSave}>
               <Save size={14} /> Save Profile
             </Button>
+          </CardContent>
+        </Card>
+
+        {/* Security */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Shield size={15} className="text-primary" /> Security &amp; Sign-in
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Register your Mac&apos;s Touch ID as a passkey so you can sign in with a fingerprint instead of a password.
+            </p>
+            <TouchIDButton
+              mode="register"
+              onSuccess={() => {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 3000);
+              }}
+              onError={(msg) => console.error("[Passkey]", msg)}
+            />
           </CardContent>
         </Card>
       </div>
