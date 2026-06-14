@@ -176,7 +176,7 @@ export default function GlobalAiAvatar() {
       {/* Floating chat card */}
       {open && (
         <div
-          className="flex flex-col gap-2 rounded-2xl shadow-2xl overflow-hidden"
+          className="flex flex-col rounded-2xl shadow-2xl overflow-hidden"
           style={{
             position: "fixed",
             right: 20,
@@ -191,9 +191,10 @@ export default function GlobalAiAvatar() {
             backdropFilter: "blur(12px)",
             border: "1px solid rgba(96,165,250,0.18)",
             padding: 10,
+            gap: 0,
           }}
         >
-          <div className="flex items-center justify-between shrink-0 px-1">
+          <div className="flex items-center justify-between shrink-0 px-1 pb-2">
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5" style={{ color: "#60a5fa" }} />
               <span className="text-[11px] font-semibold" style={{ color: "#cbd5e1" }}>Fin — your AI assistant</span>
@@ -208,7 +209,7 @@ export default function GlobalAiAvatar() {
           </div>
 
           {/* Provider / model selector */}
-          <div className="flex items-center gap-1.5 px-1 shrink-0">
+          <div className="flex items-center gap-1.5 px-1 shrink-0 pb-2">
             <select
               value={provider}
               onChange={e => setProvider(e.target.value as AiProvider)}
