@@ -147,7 +147,7 @@ export default function GlobalAiAvatar() {
       {open && (
         <div
           className="hidden md:block"
-          style={{ position: "fixed", right: 20, bottom: "auto", top: "calc(50% - 455px)", zIndex: 70 }}
+          style={{ position: "fixed", right: 20, bottom: "auto", top: "max(16px, calc(50% - 455px))", zIndex: 70 }}
         >
           <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
         </div>
