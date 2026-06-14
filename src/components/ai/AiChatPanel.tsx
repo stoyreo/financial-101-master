@@ -176,7 +176,7 @@ export function AiChatPanel({
 
   const [listening, setListening] = useState(false);
   const [ttsEnabled, setTtsEnabled] = useState(false);
-  const srRef = useRef<SpeechRecognition | null>(null);
+  const srRef = useRef<{ stop: () => void } | null>(null);
 
   const [ollamaProgress, setOllamaProgress] = useState(0);
   const [ollamaMsg, setOllamaMsg] = useState("");
@@ -234,12 +234,12 @@ export function AiChatPanel({
   const startListening = useCallback(() => {
     const SR = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
     if (!SR) return;
-    const sr: SpeechRecognition = new SR();
+    const sr = new SR() as any;
     sr.continuous = true;
     sr.interimResults = true;
     sr.lang = "th-TH,en-US";
-    sr.onresult = (e: SpeechRecognitionEvent) => {
-      const t = Array.from(e.results).map(r => r[0].transcript).join("");
+    sr.onresult = (e: any) => {
+      const t = Array.from(e.results as any[]).map((r: any) => r[0].transcript).join("");
       setInput(t);
     };
     sr.onend = () => setListening(false);
@@ -358,6 +358,8 @@ export function AiChatPanel({
             messages: apiMessages, context: snapshot ?? null,
             action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
             provider: "claude",
+            profile: profile ?? null,
+            fullPlanContext: fullPlanContext ?? null,
           }),
         });
 
@@ -412,7 +414,8 @@ export function AiChatPanel({
   const reset = useCallback(() => {
     abortRef.current?.abort();
     stopProgressBar(false);
-    setMessages([{ id: nextId(), role: "assistant", content: "Cleared — what would you like to dig into?" }]);
+    clearFinMemory();
+    setMessages([{ id: nextId(), role: "assistant", content: "Memory cleared — fresh start. What would you like to dig into?" }]);
   }, [stopProgressBar]);
 
   const onSubmit = useCallback((e: React.FormEvent) => { e.preventDefault(); send(input); }, [input, send]);

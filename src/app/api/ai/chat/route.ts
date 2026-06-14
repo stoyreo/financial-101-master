@@ -67,7 +67,7 @@ Ground rules:
   and answer from general financial knowledge instead of guessing at THB
   figures.`;
 
-function buildServerSystemPrompt(profile: Record<string, unknown> | null | undefined): string {
+function buildServerSystemPrompt(profile: Record<string, unknown> | null | undefined, fullPlanContext?: string | null): string {
   if (!profile) return BASE_SYSTEM_PROMPT;
   const lines: string[] = [];
   if (profile.fullName) lines.push(`Name: ${profile.fullName}`);
@@ -85,8 +85,8 @@ function buildServerSystemPrompt(profile: Record<string, unknown> | null | undef
   if (profile.currentCashBalance) lines.push(`Current cash balance: ฿${Number(profile.currentCashBalance).toLocaleString()}`);
   if (profile.householdNotes) lines.push(`Household notes: ${profile.householdNotes}`);
   if (profile.notes) lines.push(`Personal notes: ${profile.notes}`);
-  if (lines.length === 0) return BASE_SYSTEM_PROMPT;
-  return `${BASE_SYSTEM_PROMPT}\n\n[USER PROFILE]\n${lines.join("\n")}`;
+  const profileBlock = lines.length > 0 ? `[USER PROFILE]\n${lines.join("\n")}` : "";
+  return [BASE_SYSTEM_PROMPT, profileBlock, fullPlanContext ?? ""].filter(Boolean).join("\n\n");
 }
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -135,6 +135,7 @@ export async function POST(req: Request) {
   const clientProvider: string | undefined = body?.provider; // "ollama" | "claude"
   const clientModel: string | undefined = body?.model;
   const profile: Record<string, unknown> | null = body?.profile ?? null;
+  const fullPlanContext: string | null = body?.fullPlanContext ?? null;
 
   if (messages.length === 0) {
     return jsonError(400, "bad_request", "No messages provided.");
@@ -160,7 +161,7 @@ export async function POST(req: Request) {
   try {
     const result = await aiStream(
       {
-        system: buildServerSystemPrompt(profile),
+        system: buildServerSystemPrompt(profile, fullPlanContext),
         messages: apiMessages,
         maxTokens: 1024,
         claudeModel: "claude-sonnet-4-6",
