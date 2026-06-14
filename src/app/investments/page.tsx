@@ -13,6 +13,7 @@ import { Plus, Edit, Trash2, PiggyBank, TrendingUp } from "lucide-react";
 import { ScenarioSimulator } from "./_components/ScenarioSimulator";
 import { PVDForecastCard } from "./_components/PVDForecastCard";
 import { SCBGOLDHRMFForecastCard } from "./_components/SCBGOLDHRMFForecastCard";
+import { AIRecommendationCard } from "./_components/AIRecommendationCard";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -235,6 +236,28 @@ export default function InvestmentsPage() {
         title="Investments"
         subtitle="Track PVD, RMF, stocks, savings, and all investment accounts"
         actions={<Button size="sm" onClick={openAdd}><Plus size={14} /> Add Account</Button>}
+      />
+
+      {/* ── AI Recommendation (on-demand, web-researched) ─────────────────────── */}
+      <AIRecommendationCard
+        investments={activeInvestments.map(i => ({
+          name: i.name,
+          accountType: i.accountType,
+          assetDescription: i.assetDescription,
+          marketValue: i.marketValue,
+          expectedAnnualReturn: i.expectedAnnualReturn,
+          monthlyContribution: i.monthlyContribution,
+          annualContribution: i.annualContribution,
+          isTaxAdvantaged: i.isTaxAdvantaged,
+          currency: i.currency,
+        }))}
+        profile={{
+          age: profile?.dateOfBirth ? calcAge(profile.dateOfBirth) : undefined,
+          retirementAge: profile?.retirementAge,
+          riskProfile: profile?.riskProfile,
+          country: profile?.country,
+        }}
+        totals={{ totalValue, taxAdvantaged, monthlyContribs, weightedReturn }}
       />
 
       {/* ── PVD AI Forecast ───────────────────────────────────────────────────── */}
