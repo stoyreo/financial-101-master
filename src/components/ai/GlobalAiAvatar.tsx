@@ -140,7 +140,7 @@ export default function GlobalAiAvatar() {
           regardless of whether the chat card is open. */}
       <div
         className="hidden md:block"
-        style={{ position: "fixed", right: 20, bottom: open ? 612 : 88, zIndex: 70, transition: "bottom 180ms ease" }}
+        style={{ position: "fixed", right: 20, bottom: "auto", top: open ? "calc(50% - 612px)" : "calc(50% - 88px)", zIndex: 70, transition: "top 180ms ease" }}
       >
         <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
       </div>
@@ -153,7 +153,8 @@ export default function GlobalAiAvatar() {
           style={{
             position: "fixed",
             right: 20,
-            bottom: 20,
+            top: "50%",
+            transform: "translateY(-50%)",
             zIndex: 71,
             background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
             color: "#eff6ff",
@@ -173,7 +174,8 @@ export default function GlobalAiAvatar() {
           style={{
             position: "fixed",
             right: 20,
-            bottom: 20,
+            top: "50%",
+            transform: "translateY(-50%)",
             zIndex: 71,
             width: 360,
             maxWidth: "calc(100vw - 40px)",
