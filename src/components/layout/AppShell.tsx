@@ -62,6 +62,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const handleLogout = async () => {
     useStore.getState().clearStore?.();
     clearSession();
+    // Clear Fin's conversation memory so the next user starts fresh
+    try { sessionStorage.removeItem("fin_chat_memory_v1"); } catch { /* noop */ }
     const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     router.push("/login");

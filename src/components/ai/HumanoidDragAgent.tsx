@@ -88,6 +88,29 @@ function findTarget(x: number, y: number): { el: Element; target: ThrowTarget; r
   return null;
 }
 
+function spawnBounceEffect(x: number, y: number) {
+  const flash = document.createElement("div");
+  flash.style.cssText = `position:fixed;left:${x - 14}px;top:${y - 14}px;width:28px;height:28px;border-radius:50%;background:rgba(96,165,250,0.85);pointer-events:none;z-index:10006;animation:aiImpactFlash 0.22s ease-out forwards;`;
+  document.body.appendChild(flash);
+  setTimeout(() => flash.remove(), 260);
+  for (let i = 0; i < 10; i++) {
+    const a = (Math.PI * 2 * i) / 10 + Math.random() * 0.5;
+    const spd = 1.5 + Math.random() * 3.5;
+    const sz = 2 + Math.random() * 4;
+    const p = document.createElement("div");
+    p.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:${sz}px;height:${sz}px;border-radius:50%;background:#60a5fa;pointer-events:none;z-index:10006;`;
+    document.body.appendChild(p);
+    let px = x, py = y, vx = Math.cos(a) * spd, vy = Math.sin(a) * spd, life = 1;
+    const tick = () => {
+      if (life <= 0) { p.remove(); return; }
+      px += vx; py += vy; vx *= 0.88; vy *= 0.88; life -= 0.09;
+      p.style.left = px + "px"; p.style.top = py + "px"; p.style.opacity = String(life);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}
+
 function spawnParticles(cx: number, cy: number, n = 36) {
   for (let i = 0; i < n; i++) {
     const a = (Math.PI * 2 * i) / n + Math.random() * 0.4;
@@ -166,6 +189,7 @@ export function HumanoidDragAgent({ onThrow, status = "Ready to help", load = 14
   const zoneRef = useRef<HTMLDivElement>(null);
   const ghostRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
+  const trailEls = useRef<(HTMLDivElement | null)[]>([]);
   const [grabbed, setGrabbed] = useState(false);
 
   // Mutable flight state (avoid re-render thrash during 60fps drag/flight).
@@ -210,6 +234,7 @@ export function HumanoidDragAgent({ onThrow, status = "Ready to help", load = 14
   }, []);
 
   const flyHome = useCallback(() => {
+    trailEls.current.forEach(el => { if (el) el.style.display = "none"; });
     const home = zoneRef.current?.getBoundingClientRect();
     if (!home) { setGhostStyle("home", 0, 0, 0); flight.current.mode = "home"; setGrabbed(false); return; }
     const target = { x: home.left + home.width / 2, y: home.top + home.height / 2 };
@@ -251,23 +276,57 @@ export function HumanoidDragAgent({ onThrow, status = "Ready to help", load = 14
     f.mode = "flying";
     f.x = startX; f.y = startY; f.vx = vx; f.vy = vy; f.rot = 0;
     stopFlight();
+
+    const MARGIN = 30;
+    const MAX_BOUNCES = 3;
+    let bounces = 0;
+    const trailPos: Array<{ x: number; y: number }> = [];
+
     const step = () => {
       f.x += f.vx; f.y += f.vy;
-      f.vx *= 0.985; f.vy = f.vy * 0.985 + 0.55; // gravity + drag
-      f.rot += 16;
-      setGhostStyle("flying", f.x, f.y, f.rot);
+      f.vx *= 0.985; f.vy = f.vy * 0.985 + 0.42; // gravity + drag
+      f.rot += 18;
 
+      const W = window.innerWidth;
+      const H = window.innerHeight;
+
+      // Pinball: bounce off left/right/top edges
+      if (f.x < MARGIN && f.vx < 0) {
+        f.x = MARGIN; f.vx = Math.abs(f.vx) * 0.72; bounces++;
+        spawnBounceEffect(f.x, f.y);
+      }
+      if (f.x > W - MARGIN && f.vx > 0) {
+        f.x = W - MARGIN; f.vx = -Math.abs(f.vx) * 0.72; bounces++;
+        spawnBounceEffect(f.x, f.y);
+      }
+      if (f.y < MARGIN && f.vy < 0) {
+        f.y = MARGIN; f.vy = Math.abs(f.vy) * 0.72; bounces++;
+        spawnBounceEffect(f.x, f.y);
+      }
+
+      // Ghost trail — keep last 5 positions
+      trailPos.unshift({ x: f.x, y: f.y });
+      if (trailPos.length > 5) trailPos.pop();
+      trailPos.forEach((pos, i) => {
+        const el = trailEls.current[i];
+        if (!el) return;
+        el.style.display = "flex";
+        el.style.left = `${pos.x}px`;
+        el.style.top = `${pos.y}px`;
+        const s = Math.max(0.25, 0.75 - i * 0.12);
+        el.style.transform = `translate(-50%,-50%) scale(${s})`;
+        el.style.opacity = String(Math.max(0, 0.55 - i * 0.11));
+      });
+
+      setGhostStyle("flying", f.x, f.y, f.rot);
       const hit = findTarget(f.x, f.y);
       showHoverRing(hit?.rect ?? null);
 
-      const offscreen = f.x < -80 || f.x > window.innerWidth + 80 || f.y > window.innerHeight + 80;
-      const settled = Math.abs(f.vy) < 0.6 && f.y > window.innerHeight * 0.35;
-
-      if (offscreen) {
-        flyHome();
-        return;
-      }
-      if (settled || f.y > window.innerHeight - 40) {
+      const settled = Math.abs(f.vy) < 0.6 && f.y > H * 0.35;
+      if (bounces >= MAX_BOUNCES || settled || f.y > H - 40) {
+        // Clear trail on land
+        trailPos.length = 0;
+        trailEls.current.forEach(el => { if (el) el.style.display = "none"; });
         impactAt(f.x, f.y, hit);
         return;
       }
@@ -412,6 +471,24 @@ export function HumanoidDragAgent({ onThrow, status = "Ready to help", load = 14
           </div>
         </div>
       </div>
+
+      {/* Ghost trail elements */}
+      {[0, 1, 2, 3, 4].map(i => (
+        <div
+          key={`trail-${i}`}
+          ref={el => { trailEls.current[i] = el; }}
+          style={{
+            position: "fixed", display: "none", pointerEvents: "none",
+            zIndex: 9994 - i,
+            width: 52 - i * 4, height: 52 - i * 4,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #1e40af, #3730a3)",
+            fontSize: 22,
+            alignItems: "center", justifyContent: "center",
+            willChange: "transform, left, top",
+          }}
+        >🤖</div>
+      ))}
 
       {/* Flying ghost + hover ring — fixed-position overlays appended to body via portal-less fixed positioning */}
       <div

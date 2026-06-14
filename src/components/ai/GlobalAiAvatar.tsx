@@ -44,7 +44,7 @@ import {
 } from "@/lib/store";
 import { useAiSnapshotContext } from "@/lib/ai-snapshot-context";
 import { useAiStatus } from "@/lib/ai-status";
-import { buildGeneralChatSnapshot, describeSnapshot, type GeneralChatSnapshot } from "@/lib/ai-chat-context";
+import { buildGeneralChatSnapshot, buildFullPlanContext, describeSnapshot, type GeneralChatSnapshot, type FullPlanInput } from "@/lib/ai-chat-context";
 
 const SESSION_POLL_MS = 2000;
 
@@ -108,10 +108,28 @@ export default function GlobalAiAvatar() {
   const aiStatus = useAiStatus();
   const [open, setOpen] = useState(false);
   const [pendingTarget, setPendingTarget] = useState<ThrowTarget | null>(null);
+  const [autoMic, setAutoMic] = useState(false);
   const [status, setStatus] = useState("Ready to help");
   const [load, setLoad] = useState(12);
   const [provider, setProvider] = useState<AiProvider>("ollama");
   const [ollamaModel, setOllamaModel] = useState("gemma4");
+
+  const profile = useStore(s => s.profile);
+
+  // Full plan data — blended into Fin's system prompt memory layer
+  const incomes = useStore(s => s.incomes);
+  const expenses = useStore(s => s.expenses);
+  const debts = useStore(s => s.debts);
+  const investments = useStore(s => s.investments);
+  const retirement = useStore(s => s.retirement);
+  const tax = useStore(s => s.tax);
+  const scenarios = useStore(s => s.scenarios);
+  const activeScenarioId = useStore(s => s.activeScenarioId);
+
+  const fullPlanContext = useMemo<string | undefined>(() => {
+    if (!signedIn || incomes.length + expenses.length + debts.length + investments.length === 0) return undefined;
+    return buildFullPlanContext({ incomes, expenses, debts, investments, retirement, tax, scenarios, activeScenarioId });
+  }, [signedIn, incomes, expenses, debts, investments, retirement, tax, scenarios, activeScenarioId]);
 
   // Page-specific registration (e.g. /expenses/actuals's rich budget snapshot)
   // wins; otherwise fall back to the generic whole-of-plan snapshot below.
@@ -129,6 +147,7 @@ export default function GlobalAiAvatar() {
       setStatus(`Looking at "${target.label}"…`);
       setLoad(72);
       setPendingTarget(target);
+      setAutoMic(true);
       setOpen(true);
     } else {
       setStatus("Hmm, nothing there — try a card or chart");
@@ -143,16 +162,6 @@ export default function GlobalAiAvatar() {
 
   return (
     <>
-      {/* Avatar dock — only visible when chat is open, positioned above the chat panel */}
-      {open && (
-        <div
-          className="hidden md:block"
-          style={{ position: "fixed", right: 20, bottom: "auto", top: "max(16px, calc(50% - 455px))", zIndex: 70 }}
-        >
-          <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
-        </div>
-      )}
-
       {/* Launcher orb */}
       {!open && (
         <button
@@ -161,8 +170,7 @@ export default function GlobalAiAvatar() {
           style={{
             position: "fixed",
             right: 20,
-            top: "50%",
-            transform: "translateY(-50%)",
+            bottom: 20,
             zIndex: 71,
             background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
             color: "#eff6ff",
@@ -175,27 +183,43 @@ export default function GlobalAiAvatar() {
         </button>
       )}
 
-      {/* Floating chat card */}
+      {/* Floating chat card — bottom-anchored stack: avatar on top, panel below */}
       {open && (
         <div
-          className="flex flex-col rounded-2xl shadow-2xl overflow-hidden"
           style={{
             position: "fixed",
             right: 20,
-            top: "50%",
-            transform: "translateY(-50%)",
+            bottom: 20,
             zIndex: 71,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: 8,
+            maxHeight: "calc(100vh - 40px)",
             width: 360,
             maxWidth: "calc(100vw - 40px)",
-            height: 560,
-            maxHeight: "calc(100vh - 100px)",
-            background: "rgba(15,23,42,0.85)",
-            backdropFilter: "blur(12px)",
-            border: "1px solid rgba(96,165,250,0.18)",
-            padding: 10,
-            gap: 0,
           }}
         >
+          {/* Avatar dock */}
+          <div className="hidden md:block shrink-0">
+            <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
+          </div>
+
+          {/* Chat panel */}
+          <div
+            className="flex flex-col rounded-2xl shadow-2xl overflow-hidden"
+            style={{
+              width: "100%",
+              flex: "1 1 auto",
+              minHeight: 0,
+              maxHeight: 560,
+              background: "rgba(15,23,42,0.85)",
+              backdropFilter: "blur(12px)",
+              border: "1px solid rgba(96,165,250,0.18)",
+              padding: 10,
+              gap: 0,
+            }}
+          >
           <div className="flex items-center justify-between shrink-0 px-1 pb-2">
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5" style={{ color: "#60a5fa" }} />
@@ -259,10 +283,15 @@ export default function GlobalAiAvatar() {
               quickActions={quickActions}
               provider={provider}
               ollamaModel={ollamaModel}
+              autoActivateMic={autoMic}
+              onMicConsumed={() => setAutoMic(false)}
+              profile={profile}
+              fullPlanContext={fullPlanContext}
               hideHeader
             />
           </div>
         </div>
+      </div>
       )}
     </>
   );

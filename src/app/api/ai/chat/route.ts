@@ -39,7 +39,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `You are "Fin", the in-app AI assistant for Financial 101
+const BASE_SYSTEM_PROMPT = `You are "Fin", the in-app AI assistant for Financial 101
 Master — a personal finance planner for a Thai household. You live inside the
 app as a friendly floating avatar that users can drag onto charts, stat cards,
 and table rows to ask about what they're looking at.
@@ -52,6 +52,9 @@ Ground rules:
 - Always reason from the FINANCIAL SNAPSHOT block in the user's message when
   one is present. Cite real numbers from it (THB amounts, percentages,
   category names, months). Never invent figures that aren't in the snapshot.
+- If a USER PROFILE block is present, use it to personalise your answers —
+  address the user by name, factor in their age, retirement timeline, risk
+  profile, and goals when giving advice.
 - If the user "throws" you at a specific UI element, you'll see a CONTEXT
   note describing what they dropped you on (e.g. a stat card, a chart, a
   table row). Open by acknowledging that specific thing, then answer.
@@ -63,6 +66,28 @@ Ground rules:
 - If the snapshot is missing or doesn't cover what's asked, say so plainly
   and answer from general financial knowledge instead of guessing at THB
   figures.`;
+
+function buildServerSystemPrompt(profile: Record<string, unknown> | null | undefined): string {
+  if (!profile) return BASE_SYSTEM_PROMPT;
+  const lines: string[] = [];
+  if (profile.fullName) lines.push(`Name: ${profile.fullName}`);
+  if (profile.dateOfBirth) {
+    const age = Math.floor((Date.now() - new Date(String(profile.dateOfBirth)).getTime()) / (365.25 * 24 * 3600 * 1000));
+    lines.push(`Age: ${age} (DOB: ${profile.dateOfBirth})`);
+  }
+  if (profile.retirementAge) lines.push(`Target retirement age: ${profile.retirementAge}`);
+  if (profile.lifeExpectancy) lines.push(`Life expectancy: ${profile.lifeExpectancy}`);
+  if (profile.maritalStatus) lines.push(`Marital status: ${profile.maritalStatus}`);
+  if (profile.country) lines.push(`Country: ${profile.country}`);
+  if (profile.riskProfile) lines.push(`Risk profile: ${profile.riskProfile}`);
+  if (profile.emergencyFundTargetMonths) lines.push(`Emergency fund target: ${profile.emergencyFundTargetMonths} months`);
+  if (profile.targetMinCashBalance) lines.push(`Min cash balance target: ฿${Number(profile.targetMinCashBalance).toLocaleString()}`);
+  if (profile.currentCashBalance) lines.push(`Current cash balance: ฿${Number(profile.currentCashBalance).toLocaleString()}`);
+  if (profile.householdNotes) lines.push(`Household notes: ${profile.householdNotes}`);
+  if (profile.notes) lines.push(`Personal notes: ${profile.notes}`);
+  if (lines.length === 0) return BASE_SYSTEM_PROMPT;
+  return `${BASE_SYSTEM_PROMPT}\n\n[USER PROFILE]\n${lines.join("\n")}`;
+}
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -109,6 +134,7 @@ export async function POST(req: Request) {
   const action = body?.action;
   const clientProvider: string | undefined = body?.provider; // "ollama" | "claude"
   const clientModel: string | undefined = body?.model;
+  const profile: Record<string, unknown> | null = body?.profile ?? null;
 
   if (messages.length === 0) {
     return jsonError(400, "bad_request", "No messages provided.");
@@ -134,7 +160,7 @@ export async function POST(req: Request) {
   try {
     const result = await aiStream(
       {
-        system: SYSTEM_PROMPT,
+        system: buildServerSystemPrompt(profile),
         messages: apiMessages,
         maxTokens: 1024,
         claudeModel: "claude-sonnet-4-6",
