@@ -196,50 +196,90 @@ function parseThaiStatement(text: string): ParsedStatement {
   let currentCardLast4: string | undefined;
   const seenLines = new Set<string>();
 
+  // ── UOB format: "DD MMM DD MMM <description> <amount> [CR]"
   const cardRe = /^\d{4}\s+\d{2}XX\s+XXXX\s+(\d{4})$/;
   const txnRe = new RegExp(
     "^(\\d{1,2})\\s+(" + MONTH_NAMES + ")(\\d{1,2})\\s+(" + MONTH_NAMES + ")(.+?)(CR)?$",
     "i",
   );
 
+  // ── SCB / KBank format: "DD/MM/YY[YY] DD/MM/YY[YY] <description> <amount> [CR]"
+  // Example: "10/05/26 10/05/26 SHOPEE PAYMENT 1,250.00"
+  const scbTxnRe = /^(\d{2}\/\d{2}\/\d{2,4})\s+(\d{2}\/\d{2}\/\d{2,4})\s+(.+?)\s+([\d,]+\.\d{2})\s*(CR)?$/i;
+
+  function parseSlashDate(ds: string): string {
+    const parts = ds.split("/");
+    if (parts.length !== 3) return new Date().toISOString().slice(0, 10);
+    const [d, m, y] = parts;
+    const year = y.length === 2 ? (parseInt(y) + 2000) : parseInt(y);
+    return fmtDate(year, parseInt(m) - 1, parseInt(d));
+  }
+
   for (const line of lines) {
+    if (seenLines.has(line)) continue;
+
     const cardMatch = line.match(cardRe);
     if (cardMatch) { currentCardLast4 = cardMatch[1]; continue; }
 
-    if (/^(TOTAL|SUB\s*TOTAL|PREVIOUS BALANCE|VAT|FEE)/i.test(line)) continue;
+    if (/^(TOTAL|SUB\s*TOTAL|PREVIOUS BALANCE|VAT|FEE|MINIMUM|PAYMENT DUE|CREDIT LIMIT)/i.test(line)) continue;
 
+    // Try UOB-style first
     const tm = line.match(txnRe);
-    if (!tm) continue;
+    if (tm) {
+      seenLines.add(line);
+      const pd = tm[1];
+      const pm = tm[2].toUpperCase();
+      const td = tm[3];
+      const tmo = tm[4].toUpperCase();
+      const body = tm[5];
+      const crFlag = tm[6];
 
-    if (seenLines.has(line)) continue;
-    seenLines.add(line);
+      const split = splitBodyAmounts(body);
+      if (!split || !split.description) continue;
 
-    const pd = tm[1];
-    const pm = tm[2].toUpperCase();
-    const td = tm[3];
-    const tmo = tm[4].toUpperCase();
-    const body = tm[5];
-    const crFlag = tm[6];
+      const postYear = inferYear(MONTHS[pm], stYear, stMonth);
+      const transYear = inferYear(MONTHS[tmo], stYear, stMonth);
+      const postDate = fmtDate(postYear, MONTHS[pm], parseInt(pd));
+      const transDate = fmtDate(transYear, MONTHS[tmo], parseInt(td));
 
-    const split = splitBodyAmounts(body);
-    if (!split || !split.description) continue;
+      txns.push({
+        postDate,
+        transDate,
+        description: split.description.slice(0, 100),
+        amount: split.amount,
+        isCredit: !!crFlag,
+        currency: "THB",
+        fxAmount: split.fxAmount,
+        fxCurrency: split.fxCurrency,
+        cardLast4: currentCardLast4,
+      });
+      continue;
+    }
 
-    const postYear = inferYear(MONTHS[pm], stYear, stMonth);
-    const transYear = inferYear(MONTHS[tmo], stYear, stMonth);
-    const postDate = fmtDate(postYear, MONTHS[pm], parseInt(pd));
-    const transDate = fmtDate(transYear, MONTHS[tmo], parseInt(td));
+    // Try SCB/KBank DD/MM/YY style
+    if (bank === "SCB" || bank === "KBANK" || bank === "KTC" || bank === "OTHER") {
+      const sm = line.match(scbTxnRe);
+      if (sm) {
+        seenLines.add(line);
+        const postDate = parseSlashDate(sm[1]);
+        const transDate = parseSlashDate(sm[2]);
+        const desc = sm[3].trim();
+        const amount = parseFloat(sm[4].replace(/,/g, ""));
+        const isCredit = !!sm[5];
 
-    txns.push({
-      postDate,
-      transDate,
-      description: split.description.slice(0, 100),
-      amount: split.amount,
-      isCredit: !!crFlag,
-      currency: "THB",
-      fxAmount: split.fxAmount,
-      fxCurrency: split.fxCurrency,
-      cardLast4: currentCardLast4,
-    });
+        if (Number.isFinite(amount) && amount > 0 && desc) {
+          txns.push({
+            postDate,
+            transDate,
+            description: desc.slice(0, 100),
+            amount,
+            isCredit,
+            currency: "THB",
+            cardLast4: currentCardLast4,
+          });
+        }
+      }
+    }
   }
 
   return {

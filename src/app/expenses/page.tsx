@@ -5,7 +5,7 @@ import { useStore, selectTotalMonthlyExpenses } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
-  Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
+  Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
   InfoTooltip, AITokenMeter
 } from "@/components/ui";
@@ -98,7 +98,7 @@ function ExpenseForm({ item, onChange, allCategories, onAddCategory }: {
       </div>
       <div>
         <Label>Budget Amount (฿)</Label>
-        <Input type="number" value={item.amount} onChange={e => onChange("amount", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.amount} onChange={v => onChange("amount", v)} className="mt-1" />
       </div>
       <div>
         <Label>Frequency</Label>
@@ -117,9 +117,9 @@ function ExpenseForm({ item, onChange, allCategories, onAddCategory }: {
       <div>
         <Label>Inflation Rate</Label>
         <div className="relative mt-1">
-          <Input type="number" step="0.1" min={0} max={50}
-            value={(item.inflationRate * 100).toFixed(1)}
-            onChange={e => onChange("inflationRate", Number(e.target.value) / 100)} />
+          <NumberInput step="0.1" min={0} max={50}
+            value={parseFloat((item.inflationRate * 100).toFixed(1))}
+            onChange={v => onChange("inflationRate", v / 100)} />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
         </div>
       </div>
@@ -228,7 +228,7 @@ export default function ExpensesPage() {
               <Link href="/expenses/actuals">
                 <Button variant="outline" size="sm"><Upload size={14} /> Import Statement / Actuals</Button>
               </Link>
-              <Button size="sm" onClick={openAdd}><Plus size={14} /> Add Expense</Button>
+              <Button size="sm" onClick={openAdd}><Plus size={14} /> Add/Modify Budget</Button>
             </div>
             <AITokenMeter estimatedTokens={1500} label="expense analysis" />
           </div>

@@ -90,6 +90,63 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   );
 }
 
+// ── NumberInput ───────────────────────────────────────────
+// Fixes the "can't delete 0" UX: holds a local string draft while the user
+// is typing, only commits a parsed number on blur (or when value is valid).
+export function NumberInput({
+  value,
+  onChange,
+  className,
+  min,
+  max,
+  step,
+  placeholder,
+  disabled,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  className?: string;
+  min?: number;
+  max?: number;
+  step?: number | string;
+  placeholder?: string;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = React.useState<string | null>(null);
+
+  const display = draft !== null ? draft : (value === 0 ? "" : String(value));
+
+  return (
+    <input
+      type="number"
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      placeholder={placeholder ?? "0"}
+      value={display}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={() => {
+        const parsed = parseFloat(draft ?? "");
+        const clamped = isNaN(parsed) ? 0 : (
+          min !== undefined && parsed < min ? min :
+          max !== undefined && parsed > max ? max :
+          parsed
+        );
+        onChange(clamped);
+        setDraft(null);
+      }}
+      className={cn(
+        "flex h-9 w-full rounded-md border border-input bg-background px-3 py-1",
+        "text-sm shadow-sm transition-colors placeholder:text-muted-foreground",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        className
+      )}
+    />
+  );
+}
+
 // ── Label ────────────────────────────────────────────────
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
   return (

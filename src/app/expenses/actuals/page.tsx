@@ -39,6 +39,7 @@ import {
 import { BUDGET_CATEGORIES } from "@/lib/categorize";
 import type { Transaction, StatementImport, ExpenseItem } from "@/lib/types";
 import { SavingsOptimizer } from "@/components/dashboard/SavingsOptimizer";
+import { SlipUpload } from "@/components/SlipUpload";
 import { toMonthly } from "@/lib/utils";
 import { useRegisterAiSnapshot } from "@/lib/ai-snapshot-context";
 import { buildActualsChatSnapshot, describeSnapshot } from "@/lib/ai-chat-context";
@@ -679,6 +680,9 @@ function ActualsPageInner() {
           )}
         </CardContent>
       </Card>
+
+      {/* Slip Upload — PromptPay / QR receipt OCR */}
+      <SlipUpload />
 
       {/* Savings Optimizer Simulator */}
       {selectedMonth && rows.length > 0 && (

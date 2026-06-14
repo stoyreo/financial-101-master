@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { Logo } from "@/components/brand/Logo";
 import { TouchIDButton } from "@/components/TouchIDButton";
+import { logAuditEvent } from "@/lib/audit-log";
 
 function LoginPageInner() {
   const router = useRouter();
@@ -155,6 +156,8 @@ function LoginPageInner() {
         // Non-fatal
       }
 
+      // Log login event (use Supabase user ID as audit key until app session is set)
+      try { logAuditEvent(data.user.id, "login", `Signed in as ${data.user.email ?? email}`); } catch { /* ignore */ }
       router.push(searchParams.get("redirectTo") || "/");
     } catch (err) {
       setErrorMsg("An error occurred. Try again.");

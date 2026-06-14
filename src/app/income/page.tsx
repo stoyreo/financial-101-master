@@ -4,7 +4,7 @@ import { useStore, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
 import type { IncomeItem, IncomeCategory, Frequency } from "@/lib/types";
 import {
-  Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
+  Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Alert,
   InfoTooltip, AITokenMeter, recordTokenUsage
 } from "@/components/ui";
@@ -50,7 +50,7 @@ function IncomeForm({ item, onChange }: { item: Omit<IncomeItem, "id">; onChange
       </div>
       <div>
         <Label>Amount (฿)</Label>
-        <Input type="number" value={item.amount} onChange={e => onChange("amount", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.amount} onChange={v => onChange("amount", v)} className="mt-1" />
       </div>
       <div>
         <Label>Start Date</Label>
@@ -63,9 +63,9 @@ function IncomeForm({ item, onChange }: { item: Omit<IncomeItem, "id">; onChange
       <div>
         <Label>Annual Growth Rate</Label>
         <div className="relative mt-1">
-          <Input type="number" step="0.01" min={-0.5} max={1}
-            value={(item.annualGrowthRate * 100).toFixed(1)}
-            onChange={e => onChange("annualGrowthRate", Number(e.target.value) / 100)} />
+          <NumberInput step={0.01} min={-50} max={100}
+            value={parseFloat((item.annualGrowthRate * 100).toFixed(1))}
+            onChange={v => onChange("annualGrowthRate", v / 100)} />
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
         </div>
       </div>

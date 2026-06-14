@@ -1,19 +1,32 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { calcAge, yearAtAge, thb } from "@/lib/utils";
 import {
-  Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
+  Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Textarea, Switch, Separator, StatCard, PageHeader, Badge, Alert
 } from "@/components/ui";
-import { User, Calendar, Target, Shield, Save, RefreshCw, AlertTriangle, CheckCircle } from "lucide-react";
+import { User, Calendar, Target, Shield, Save, RefreshCw, AlertTriangle, CheckCircle, MessageCircle, Send, Eye, EyeOff } from "lucide-react";
 import { TouchIDButton } from "@/components/TouchIDButton";
+import { getSession } from "@/lib/auth-client";
+import { getLINENotifyToken, setLINENotifyToken, sendLINENotify } from "@/lib/line-notify";
 
 export default function ProfilePage() {
   const { profile, setProfile } = useStore();
   const [form, setForm] = useState({ ...profile });
   const [saved, setSaved] = useState(false);
   const [passkeyMsg, setPasskeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  // LINE Notify state
+  const session = getSession();
+  const [lineToken, setLineToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [lineMsg, setLineMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [lineTesting, setLineTesting] = useState(false);
+
+  useEffect(() => {
+    if (session?.userId) setLineToken(getLINENotifyToken(session.userId));
+  }, [session?.userId]);
 
   const age = calcAge(form.dateOfBirth);
   const yearsToRetirement = Math.max(0, form.retirementAge - age);
@@ -25,6 +38,24 @@ export default function ProfilePage() {
     setProfile(form);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleSaveLineToken = () => {
+    if (!session?.userId) return;
+    setLINENotifyToken(session.userId, lineToken.trim());
+    setLineMsg({ ok: true, text: "Token saved." });
+    setTimeout(() => setLineMsg(null), 3000);
+  };
+
+  const handleTestLine = async () => {
+    if (!lineToken.trim()) return;
+    setLineTesting(true);
+    const ok = await sendLINENotify(lineToken.trim(), "\u{1F4B0} Financial 101 Master: LINE Notify is connected!");
+    setLineMsg(ok
+      ? { ok: true, text: "Test message sent to LINE." }
+      : { ok: false, text: "Failed. Check your token and try again." });
+    setLineTesting(false);
+    setTimeout(() => setLineMsg(null), 5000);
   };
 
   const handleReset = () => setForm({ ...profile });
@@ -119,12 +150,12 @@ export default function ProfilePage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="retAge">Target Retirement Age</Label>
-              <Input id="retAge" type="number" min={40} max={80} {...field("retirementAge")} className="mt-1" />
+              <NumberInput min={40} max={80} value={Number(form.retirementAge ?? 0)} onChange={v => setForm(f => ({ ...f, retirementAge: v }))} className="mt-1" />
               <p className="text-xs text-muted-foreground mt-1">Retirement in {retirementYear} · {yearsToRetirement} years away</p>
             </div>
             <div>
               <Label htmlFor="lifeExp">Life Expectancy (planning horizon)</Label>
-              <Input id="lifeExp" type="number" min={60} max={110} {...field("lifeExpectancy")} className="mt-1" />
+              <NumberInput min={60} max={110} value={Number(form.lifeExpectancy ?? 0)} onChange={v => setForm(f => ({ ...f, lifeExpectancy: v }))} className="mt-1" />
               <p className="text-xs text-muted-foreground mt-1">Plan through year {lifeExpectancyYear}</p>
             </div>
             <div>
@@ -152,15 +183,15 @@ export default function ProfilePage() {
           <CardContent className="space-y-4">
             <div>
               <Label htmlFor="efMonths">Emergency Fund Target (months of expenses)</Label>
-              <Input id="efMonths" type="number" min={1} max={24} {...field("emergencyFundTargetMonths")} className="mt-1" />
+              <NumberInput min={1} max={24} value={Number(form.emergencyFundTargetMonths ?? 0)} onChange={v => setForm(f => ({ ...f, emergencyFundTargetMonths: v }))} className="mt-1" />
             </div>
             <div>
               <Label htmlFor="minCash">Target Minimum Cash Balance (฿)</Label>
-              <Input id="minCash" type="number" {...field("targetMinCashBalance")} className="mt-1" />
+              <NumberInput value={Number(form.targetMinCashBalance ?? 0)} onChange={v => setForm(f => ({ ...f, targetMinCashBalance: v }))} className="mt-1" />
             </div>
             <div>
               <Label htmlFor="cash">Current Cash Balance (฿)</Label>
-              <Input id="cash" type="number" {...field("currentCashBalance")} className="mt-1" />
+              <NumberInput value={Number(form.currentCashBalance ?? 0)} onChange={v => setForm(f => ({ ...f, currentCashBalance: v }))} className="mt-1" />
             </div>
 
             <Separator />
@@ -230,6 +261,67 @@ export default function ProfilePage() {
               }}
               onError={(msg) => setPasskeyMsg({ ok: false, text: msg })}
             />
+          </CardContent>
+        </Card>
+
+        {/* LINE Notify */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <MessageCircle size={15} className="text-green-500" /> LINE Notify
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Get budget alerts, debt payoff milestones, and backup notifications in LINE.{" "}
+              <a
+                href="https://notify-bot.line.me/my/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline"
+              >
+                Get your token here ↗
+              </a>
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="lineToken">LINE Notify Token</Label>
+              <div className="relative">
+                <Input
+                  id="lineToken"
+                  type={showToken ? "text" : "password"}
+                  value={lineToken}
+                  onChange={(e) => setLineToken(e.target.value)}
+                  placeholder="Paste your token here…"
+                  className="pr-10 mt-1 font-mono text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(v => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            {lineMsg && (
+              <div className={`text-xs rounded-lg px-3 py-2 ${lineMsg.ok ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400" : "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400"}`}>
+                {lineMsg.text}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="flex-1" onClick={handleSaveLineToken}>
+                <Save size={13} /> Save Token
+              </Button>
+              <Button size="sm" className="flex-1" onClick={handleTestLine} disabled={lineTesting || !lineToken.trim()}>
+                <Send size={13} /> {lineTesting ? "Sending…" : "Send Test"}
+              </Button>
+            </div>
+            <div className="text-[11px] text-muted-foreground bg-muted rounded-lg p-2 space-y-0.5">
+              <div className="font-medium">Setup steps:</div>
+              <div>1. Visit <span className="font-mono">notify-bot.line.me/my</span></div>
+              <div>2. Issue a token → choose &quot;1-on-1 chat with LINE Notify&quot;</div>
+              <div>3. Paste the token above and Save</div>
+            </div>
           </CardContent>
         </Card>
       </div>

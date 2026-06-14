@@ -4,7 +4,7 @@ import { useStore, selectTotalInvestmentValue } from "@/lib/store";
 import { thb, pct, calcAge } from "@/lib/utils";
 import type { InvestmentAccount, AccountType } from "@/lib/types";
 import {
-  Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
+  Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
   InfoTooltip
 } from "@/components/ui";
@@ -99,7 +99,7 @@ function InvestmentForm({
       </div>
       <div>
         <Label>Current Market Value (฿)</Label>
-        <Input type="number" value={item.marketValue} onChange={e => onChange("marketValue", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.marketValue} onChange={v => onChange("marketValue", v)} className="mt-1" />
       </div>
       <div>
         <div className="flex items-center gap-2 mb-1">
@@ -115,8 +115,8 @@ function InvestmentForm({
             </span>
           )}
         </div>
-        <Input type="number" step="0.5" value={(item.expectedAnnualReturn * 100).toFixed(1)}
-          onChange={e => onChange("expectedAnnualReturn", Number(e.target.value) / 100)} className="mt-1" />
+        <NumberInput step="0.5" value={parseFloat((item.expectedAnnualReturn * 100).toFixed(1))}
+          onChange={v => onChange("expectedAnnualReturn", v / 100)} className="mt-1" />
         {isPVD && aiPVDReturn !== undefined && Math.abs(item.expectedAnnualReturn - aiPVDReturn) > 0.001 && (
           <button
             type="button"
@@ -138,11 +138,11 @@ function InvestmentForm({
       </div>
       <div>
         <Label>Monthly Contribution (฿)</Label>
-        <Input type="number" value={item.monthlyContribution} onChange={e => onChange("monthlyContribution", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.monthlyContribution} onChange={v => onChange("monthlyContribution", v)} className="mt-1" />
       </div>
       <div>
         <Label>Annual Contribution (฿)</Label>
-        <Input type="number" value={item.annualContribution} onChange={e => onChange("annualContribution", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.annualContribution} onChange={v => onChange("annualContribution", v)} className="mt-1" />
       </div>
       <div className="flex items-center gap-3 mt-2">
         <Label>Tax Advantaged</Label>

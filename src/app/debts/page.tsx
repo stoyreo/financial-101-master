@@ -6,7 +6,7 @@ import { summariseMortgage, compareExtraPaymentScenarios } from "@/lib/engine/mo
 import { calculatePayoffYear, formatPayoffDisplay, computePayoffMonths, computePayoffInfo } from "@/lib/engine/debt-payoff";
 import type { DebtAccount, DebtType, Profile } from "@/lib/types";
 import {
-  Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
+  Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress, Alert, Tabs, TabsList, TabsTrigger, TabsContent,
   InfoTooltip
 } from "@/components/ui";
@@ -60,16 +60,16 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
       )}
       <div>
         <Label>Original Principal (฿)</Label>
-        <Input type="number" value={item.originalPrincipal} onChange={e => onChange("originalPrincipal", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.originalPrincipal} onChange={v => onChange("originalPrincipal", v)} className="mt-1" />
       </div>
       <div>
         <Label>Current Balance (฿)</Label>
-        <Input type="number" value={item.currentBalance} onChange={e => onChange("currentBalance", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.currentBalance} onChange={v => onChange("currentBalance", v)} className="mt-1" />
       </div>
       <div>
         <Label>Annual Interest Rate (%)</Label>
-        <Input type="number" step="0.1" value={(item.annualInterestRate * 100).toFixed(2)}
-          onChange={e => onChange("annualInterestRate", Number(e.target.value) / 100)} className="mt-1" />
+        <NumberInput step="0.1" value={parseFloat((item.annualInterestRate * 100).toFixed(2))}
+          onChange={v => onChange("annualInterestRate", v / 100)} className="mt-1" />
       </div>
       <div>
         <Label>Interest Type</Label>
@@ -80,19 +80,19 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
       </div>
       <div>
         <Label>Loan Term (months)</Label>
-        <Input type="number" value={item.loanTermMonths ?? 60} onChange={e => onChange("loanTermMonths", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.loanTermMonths ?? 60} onChange={v => onChange("loanTermMonths", v)} className="mt-1" />
       </div>
       <div>
         <Label>Minimum Monthly Payment (฿)</Label>
-        <Input type="number" value={item.minimumMonthlyPayment} onChange={e => onChange("minimumMonthlyPayment", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.minimumMonthlyPayment} onChange={v => onChange("minimumMonthlyPayment", v)} className="mt-1" />
       </div>
       <div>
         <Label>Standard Monthly Payment (฿)</Label>
-        <Input type="number" value={item.standardMonthlyPayment} onChange={e => onChange("standardMonthlyPayment", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.standardMonthlyPayment} onChange={v => onChange("standardMonthlyPayment", v)} className="mt-1" />
       </div>
       <div>
         <Label>Extra Monthly Payment (฿)</Label>
-        <Input type="number" value={item.extraMonthlyPayment} onChange={e => onChange("extraMonthlyPayment", Number(e.target.value))} className="mt-1" />
+        <NumberInput value={item.extraMonthlyPayment} onChange={v => onChange("extraMonthlyPayment", v)} className="mt-1" />
       </div>
       <div>
         <Label>Start Date</Label>
@@ -102,7 +102,7 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
         <>
           <div>
             <Label>Annual Lump-Sum Prepayment (฿)</Label>
-            <Input type="number" value={item.annualPrepayment ?? 0} onChange={e => onChange("annualPrepayment", Number(e.target.value))} className="mt-1" />
+            <NumberInput value={item.annualPrepayment ?? 0} onChange={v => onChange("annualPrepayment", v)} className="mt-1" />
           </div>
           <div>
             <Label>Planned Refinance Date</Label>
@@ -110,12 +110,12 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
           </div>
           <div>
             <Label>Refinance New Rate (%)</Label>
-            <Input type="number" step="0.1" value={item.refinanceNewRate ? (item.refinanceNewRate * 100).toFixed(2) : ""}
-              onChange={e => onChange("refinanceNewRate", e.target.value ? Number(e.target.value) / 100 : undefined)} className="mt-1" />
+            <NumberInput step="0.1" value={item.refinanceNewRate ? parseFloat((item.refinanceNewRate * 100).toFixed(2)) : 0}
+              onChange={v => onChange("refinanceNewRate", v > 0 ? v / 100 : undefined)} className="mt-1" />
           </div>
           <div>
             <Label>Refinance Fee (฿)</Label>
-            <Input type="number" value={item.refinanceFee ?? 0} onChange={e => onChange("refinanceFee", Number(e.target.value))} className="mt-1" />
+            <NumberInput value={item.refinanceFee ?? 0} onChange={v => onChange("refinanceFee", v)} className="mt-1" />
           </div>
         </>
       )}
@@ -205,15 +205,15 @@ function MortgageSimulatorPanel({ debts, selectedDebtIds }: { debts: DebtAccount
         <CardContent className="grid grid-cols-3 gap-4">
           <div>
             <Label className="text-xs">Extra Monthly Payment (฿)</Label>
-            <Input type="number" step="1000" value={extraPayment} onChange={e => setExtraPayment(Number(e.target.value))} className="mt-1" />
+            <NumberInput step={1000} value={extraPayment} onChange={v => setExtraPayment(v)} className="mt-1" />
           </div>
           <div>
             <Label className="text-xs">Annual Lump Sum (฿)</Label>
-            <Input type="number" step="10000" value={lumpSum} onChange={e => setLumpSum(Number(e.target.value))} className="mt-1" />
+            <NumberInput step={10000} value={lumpSum} onChange={v => setLumpSum(v)} className="mt-1" />
           </div>
           <div>
             <Label className="text-xs">Interest Rate (%)</Label>
-            <Input type="number" step="0.1" value={rateOverride.toFixed(2)} onChange={e => setRateOverride(Number(e.target.value))} className="mt-1" />
+            <NumberInput step={0.1} value={parseFloat(rateOverride.toFixed(2))} onChange={v => setRateOverride(v)} className="mt-1" />
           </div>
         </CardContent>
       </Card>

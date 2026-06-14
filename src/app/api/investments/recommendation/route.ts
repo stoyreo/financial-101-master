@@ -21,6 +21,7 @@
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { extractJson } from "@/lib/ai-provider";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -137,7 +138,10 @@ Return STRICT JSON only as specified.`;
 
     const msg = await client.messages.create({
       model: MODEL,
-      max_tokens: 2500,
+      // Headroom so the final JSON (verdict + 3-5 recs + allocation + sources)
+      // isn't truncated mid-object after web_search consumes context — a
+      // truncated object is the other common cause of a parse failure.
+      max_tokens: 4096,
       system: SYSTEM,
       messages: [{ role: "user", content: userPrompt }],
       tools: [
@@ -167,13 +171,22 @@ Return STRICT JSON only as specified.`;
       }
     }
 
-    const jsonStr = textOut.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+    // The web_search tool makes the model emit narration text blocks before
+    // (and sometimes after) the final JSON, all of which get concatenated into
+    // textOut above. extractJson slices out the balanced JSON object so leading
+    // "Let me research…" prose doesn't break JSON.parse.
+    const jsonStr = extractJson(textOut);
     let parsed: any;
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
       return NextResponse.json(
-        { error: "parse_failed", reason: "model_did_not_return_valid_json", raw: textOut },
+        {
+          error: "parse_failed",
+          reason: "model_did_not_return_valid_json",
+          message: "The AI responded but didn't return a usable recommendation. Please try again.",
+          raw: textOut,
+        },
         { status: 502 },
       );
     }

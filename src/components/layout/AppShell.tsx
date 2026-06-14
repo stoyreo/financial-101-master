@@ -21,8 +21,9 @@ import {
   LayoutDashboard, User, Users, TrendingUp, CreditCard, PiggyBank,
   Calculator, Sliders, BarChart3, Moon, Sun, Menu, X,
   Download, Upload, RefreshCw, ChevronRight, MoreHorizontal, LogOut,
-  CheckCircle, AlertCircle, Loader2, Cloud, HardDrive,
+  CheckCircle, AlertCircle, Loader2, Cloud, HardDrive, ClipboardList,
 } from "lucide-react";
+import { logAuditEvent } from "@/lib/audit-log";
 
 // Nav type includes optional adminOnly flag
 const NAV: { href: string; label: string; icon: any; adminOnly?: boolean }[] = [
@@ -35,6 +36,7 @@ const NAV: { href: string; label: string; icon: any; adminOnly?: boolean }[] = [
   { href: "/scenarios",   label: "Scenarios",       icon: Sliders },
   { href: "/forecast",    label: "Forecast",        icon: BarChart3 },
   { href: "/profile",     label: "Profile",         icon: User },
+  { href: "/audit-log",   label: "Audit Log",       icon: ClipboardList },
   { href: "/admin/users", label: "Admin",           icon: Users, adminOnly: true },
 ];
 
@@ -60,6 +62,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { profile, recomputeForecast, exportData, exportDataXlsx, importDataXlsx, loadSeedData, saveUserNamespace, saveUserNamespaceAsync } = useStore();
   const router = useRouter();
   const handleLogout = async () => {
+    const currentSession = getSession();
+    if (currentSession?.userId) {
+      logAuditEvent(currentSession.userId, "logout", `Signed out (${currentSession.email || currentSession.username})`);
+    }
     useStore.getState().clearStore?.();
     clearSession();
     // Clear Fin's conversation memory so the next user starts fresh

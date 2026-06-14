@@ -330,7 +330,52 @@ export async function probeProviders(): Promise<ProbeResult> {
   };
 }
 
-/** Strip ```json fences a model may wrap around JSON output. */
+/**
+ * Pull a JSON value out of a model response. Handles the three cases that
+ * routinely break a naive JSON.parse:
+ *   1. ```json … ``` markdown fences,
+ *   2. narration text BEFORE the JSON — common when the model used a tool
+ *      (e.g. web_search) and emitted "Let me look this up…" text blocks that
+ *      get concatenated ahead of the final JSON,
+ *   3. trailing prose AFTER the closing brace.
+ * Returns the best-effort JSON substring (still a string — the caller parses).
+ */
 export function extractJson(text: string): string {
-  return text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+  let s = (text ?? "").trim();
+
+  // 1) Prefer the contents of a fenced code block if one is present anywhere.
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) s = fence[1].trim();
+
+  // 2) Slice from the first JSON opener to its balanced closer, ignoring
+  //    braces/brackets that appear inside string literals.
+  const objAt = s.indexOf("{");
+  const arrAt = s.indexOf("[");
+  const start = objAt === -1 ? arrAt : arrAt === -1 ? objAt : Math.min(objAt, arrAt);
+  if (start === -1) return s;
+
+  const open = s[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === open) depth++;
+    else if (ch === close) {
+      depth--;
+      if (depth === 0) return s.slice(start, i + 1);
+    }
+  }
+
+  // Unbalanced (likely truncated output) — return from the opener onward and
+  // let the caller's JSON.parse surface the failure.
+  return s.slice(start);
 }
