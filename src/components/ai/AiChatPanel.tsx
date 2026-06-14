@@ -119,45 +119,127 @@ export function AiChatPanel({
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // Build the conversation history to send
+    const apiMessages = [...messages, userMsg]
+      .filter(m => !m.pending)
+      .map(m => ({ role: m.role, content: m.content }));
+
+    // Fold context/action into the last user turn (mirrors server-side logic in /api/ai/chat)
+    function buildUserTurn(content: string): string {
+      const parts: string[] = [];
+      if (action?.action) {
+        const label = action.label ? ` "${action.label}"` : "";
+        const ctx = action.context ? ` — ${action.context}` : "";
+        parts.push(`[CONTEXT: The user dragged the assistant avatar and dropped it on a ${action.action}${label}${ctx}. Open by acknowledging this specific thing.]`);
+      }
+      if (snapshot && typeof snapshot === "object") {
+        parts.push(`[FINANCIAL SNAPSHOT — current account/month, THB]\n${JSON.stringify(snapshot)}`);
+      }
+      parts.push(content?.trim() || "(no message — just react to the context above)");
+      return parts.join("\n\n");
+    }
+
+    const enrichedMessages = apiMessages.map((m, i) =>
+      i === apiMessages.length - 1 && m.role === "user"
+        ? { ...m, content: buildUserTurn(m.content) }
+        : m
+    );
+
+    const SYSTEM_PROMPT = `You are "Fin", the in-app AI assistant for Financial 101 Master — a personal finance planner for a Thai household. You live inside the app as a friendly floating avatar that users can drag onto charts, stat cards, and table rows to ask about what they're looking at.\n\nGround rules:\n- You are a knowledgeable peer, not a licensed advisor.\n- Always reason from the FINANCIAL SNAPSHOT block when present. Cite real THB numbers.\n- If dropped on a UI element, open by acknowledging that specific thing.\n- Be conversational, warm, and concise — 2-5 short paragraphs or a short list.\n- Currency is THB (฿). Thailand-aware (PVD/RMF/SSF, Thai inflation, Bangkok cost of living, Thai tax brackets).`;
+
     try {
-      const res = await fetch("/api/ai/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          messages: [...messages, userMsg]
-            .filter(m => !m.pending)
-            .map(m => ({ role: m.role, content: m.content })),
-          context: snapshot ?? null,
-          action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
-          provider,
-          model: provider === "ollama" ? ollamaModel : undefined,
-        }),
-      });
+      let res: Response;
 
-      if (!res.ok || !res.body) {
-        let reason = "unknown";
-        try { reason = (await res.json())?.message ?? reason; } catch { /* ignore */ }
-        setMessages(prev => prev.map(m => m.id === assistantId
-          ? { ...m, pending: false, error: true, content: `I couldn't reach Claude just now (${reason}). Local insights are still available from the regular AI buttons on this page.` }
-          : m));
-        return;
+      if (provider === "ollama") {
+        // Call Ollama directly from the browser — avoids the server-side
+        // localhost:11434 problem when the app is deployed on Vercel.
+        res = await fetch("http://localhost:11434/api/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            model: ollamaModel,
+            stream: true,
+            options: { num_predict: 1024, temperature: 0.6 },
+            messages: [{ role: "system", content: SYSTEM_PROMPT }, ...enrichedMessages],
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          throw new Error(`Ollama returned ${res.status}. Make sure Ollama is running and OLLAMA_ORIGINS is set.`);
+        }
+
+        // Ollama streams newline-delimited JSON: {"message":{"content":"…"}}
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let acc = "";
+        let buf = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            const t = line.trim();
+            if (!t) continue;
+            try {
+              const obj = JSON.parse(t) as { message?: { content?: string } };
+              const delta = obj?.message?.content;
+              if (delta) {
+                acc += delta;
+                setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: acc, pending: false } : m));
+              }
+            } catch { /* partial line */ }
+          }
+        }
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, pending: false } : m));
+
+      } else {
+        // Claude — route through the secure server-side endpoint
+        res = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            messages: apiMessages,
+            context: snapshot ?? null,
+            action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
+            provider: "claude",
+          }),
+        });
+
+        if (!res.ok || !res.body) {
+          let reason = "unknown";
+          try { reason = (await res.json())?.message ?? reason; } catch { /* ignore */ }
+          setMessages(prev => prev.map(m => m.id === assistantId
+            ? { ...m, pending: false, error: true, content: `I couldn't reach Claude just now (${reason}). Local insights are still available from the regular AI buttons on this page.` }
+            : m));
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let acc = "";
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          acc += decoder.decode(value, { stream: true });
+          setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: acc, pending: false } : m));
+        }
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, pending: false } : m));
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let acc = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: acc, pending: false } : m));
-      }
-      setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, pending: false } : m));
     } catch (e: any) {
       if (e?.name === "AbortError") return;
+      const isOllamaErr = provider === "ollama" && (e?.message?.includes("Failed to fetch") || e?.message?.includes("Ollama"));
       setMessages(prev => prev.map(m => m.id === assistantId
-        ? { ...m, pending: false, error: true, content: "Something interrupted that response — give it another try when you're ready." }
+        ? {
+            ...m, pending: false, error: true,
+            content: isOllamaErr
+              ? `Couldn't reach Ollama at localhost:11434. Make sure Ollama is running and set OLLAMA_ORIGINS=* (see README). Switching to Claude in the dropdown will work without this.`
+              : "Something interrupted that response — give it another try when you're ready.",
+          }
         : m));
     } finally {
       setStreaming(false);
