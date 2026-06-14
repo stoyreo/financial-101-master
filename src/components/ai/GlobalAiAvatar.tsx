@@ -202,20 +202,18 @@ export default function GlobalAiAvatar() {
               <div>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[11px] font-semibold" style={{ color: "#cbd5e1" }}>Fin — your AI assistant</span>
-                  {!aiStatus.loading && (
-                    <span
-                      title={aiStatus.available ? `Connected (${aiStatus.provider ?? "AI"})` : "AI unavailable"}
-                      style={{
-                        display: "inline-block",
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: aiStatus.available ? "#22c55e" : "#ef4444",
-                        boxShadow: aiStatus.available ? "0 0 5px #22c55e" : "0 0 5px #ef4444",
-                        flexShrink: 0,
-                      }}
-                    />
-                  )}
+                  <span
+                    title={aiStatus.loading ? "Checking connection…" : aiStatus.available ? `Connected (${aiStatus.provider ?? "AI"})` : "AI unavailable"}
+                    style={{
+                      display: "inline-block",
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background: aiStatus.loading ? "#64748b" : aiStatus.available ? "#22c55e" : "#ef4444",
+                      boxShadow: aiStatus.loading ? "none" : aiStatus.available ? "0 0 6px #22c55e" : "0 0 6px #ef4444",
+                    }}
+                  />
                 </div>
                 {snapshotLabel && <div className="text-[10px] truncate" style={{ color: "#64748b" }}>{snapshotLabel}</div>}
               </div>
@@ -252,7 +250,7 @@ export default function GlobalAiAvatar() {
             )}
           </div>
 
-          <div className="flex-1 min-h-0">
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <AiChatPanel
               snapshot={snapshot}
               snapshotLabel={snapshotLabel}

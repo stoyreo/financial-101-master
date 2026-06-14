@@ -186,7 +186,7 @@ export function AiChatPanel({
   }, [input, send]);
 
   return (
-    <div className="ai-chat-panel flex flex-col h-full min-h-0 rounded-xl overflow-hidden border" style={{ background: "rgba(15,23,42,0.55)", borderColor: "rgba(96,165,250,0.16)" }}>
+    <div className="ai-chat-panel flex flex-col flex-1 min-h-0 rounded-xl overflow-hidden border" style={{ background: "rgba(15,23,42,0.55)", borderColor: "rgba(96,165,250,0.16)" }}>
       <style dangerouslySetInnerHTML={{ __html: "@keyframes aiDotPulse { 0%,80%,100% { opacity:.25; transform: translateY(0);} 40% { opacity:1; transform: translateY(-2px);} }" }} />
       {/* Header */}
       {!hideHeader && <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: "rgba(96,165,250,0.12)" }}>
@@ -207,7 +207,7 @@ export function AiChatPanel({
             <RotateCcw className="h-3.5 w-3.5" style={{ color: "#94a3b8" }} />
           </button>
         </div>
-      </div>
+      </div>}
 
       {!aiAvailable && (
         <div className="px-3 py-1.5 text-[10px] shrink-0" style={{ background: "rgba(245,158,11,0.1)", color: "#fbbf24", borderBottom: "1px solid rgba(245,158,11,0.2)" }}>
