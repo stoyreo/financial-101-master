@@ -27,6 +27,10 @@ export interface AiChatPanelProps {
   onConsumeTarget?: () => void;
   /** Quick-action prompts shown above the input. */
   quickActions?: Array<{ label: string; sub?: string; prompt: string }>;
+  /** AI provider to use ("ollama" | "claude"). Defaults to "ollama". */
+  provider?: "ollama" | "claude";
+  /** Ollama model name. Defaults to "gemma4". */
+  ollamaModel?: string;
 }
 
 type Role = "user" | "assistant";
@@ -79,6 +83,8 @@ function renderInline(line: string) {
 export function AiChatPanel({
   snapshot, snapshotLabel, pendingTarget, onConsumeTarget,
   quickActions = DEFAULT_QUICK_ACTIONS,
+  provider = "ollama",
+  ollamaModel = "gemma4",
 }: AiChatPanelProps) {
   const { available: aiAvailable } = useAiStatus();
   const [messages, setMessages] = useState<ChatMsg[]>([{
@@ -121,6 +127,8 @@ export function AiChatPanel({
             .map(m => ({ role: m.role, content: m.content })),
           context: snapshot ?? null,
           action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
+          provider,
+          model: provider === "ollama" ? ollamaModel : undefined,
         }),
       });
 
@@ -152,7 +160,7 @@ export function AiChatPanel({
       setStreaming(false);
       abortRef.current = null;
     }
-  }, [messages, snapshot, streaming]);
+  }, [messages, snapshot, streaming, provider, ollamaModel]);
 
   // When the avatar lands on something, open a contextual turn automatically.
   useEffect(() => {

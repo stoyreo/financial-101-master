@@ -107,6 +107,8 @@ export async function POST(req: Request) {
   const messages: ChatMessage[] = Array.isArray(body?.messages) ? body.messages : [];
   const context = body?.context;
   const action = body?.action;
+  const clientProvider: string | undefined = body?.provider; // "ollama" | "claude"
+  const clientModel: string | undefined = body?.model;
 
   if (messages.length === 0) {
     return jsonError(400, "bad_request", "No messages provided.");
@@ -130,12 +132,16 @@ export async function POST(req: Request) {
   let stream: ReadableStream<Uint8Array>;
   let source: string;
   try {
-    const result = await aiStream({
-      system: SYSTEM_PROMPT,
-      messages: apiMessages,
-      maxTokens: 1024,
-      claudeModel: "claude-sonnet-4-6",
-    });
+    const result = await aiStream(
+      {
+        system: SYSTEM_PROMPT,
+        messages: apiMessages,
+        maxTokens: 1024,
+        claudeModel: "claude-sonnet-4-6",
+        ollamaModel: clientModel,
+      },
+      clientProvider === "claude" ? "claude" : clientProvider === "ollama" ? "ollama" : undefined,
+    );
     stream = result.stream;
     source = result.source;
   } catch (e) {

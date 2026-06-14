@@ -72,6 +72,8 @@ export interface AiRequest {
   json?: boolean;
   /** Claude model to use when falling back. Defaults to Haiku 4.5. */
   claudeModel?: string;
+  /** Override the Ollama model (e.g. "gemma3", "mistral"). Falls back to OLLAMA_MODEL env. */
+  ollamaModel?: string;
 }
 
 export interface AiCompletion {
@@ -85,7 +87,7 @@ export interface AiCompletion {
 
 function ollamaBody(req: AiRequest, stream: boolean) {
   return JSON.stringify({
-    model: OLLAMA_MODEL,
+    model: req.ollamaModel ?? OLLAMA_MODEL,
     stream,
     ...(req.json ? { format: "json" } : {}),
     options: {
@@ -278,9 +280,12 @@ export async function aiComplete(req: AiRequest): Promise<AiCompletion> {
  * provider that produced it. Falls back to Claude if Ollama can't be reached
  * at connection time.
  */
-export async function aiStream(req: AiRequest): Promise<{ stream: ReadableStream<Uint8Array>; source: AiSource }> {
+export async function aiStream(req: AiRequest, preferredOverride?: ProviderId): Promise<{ stream: ReadableStream<Uint8Array>; source: AiSource }> {
+  const order: ProviderId[] = preferredOverride
+    ? preferredOverride === "claude" ? ["claude", "ollama"] : ["ollama", "claude"]
+    : providerOrder();
   let lastErr = "";
-  for (const p of providerOrder()) {
+  for (const p of order) {
     try {
       if (p === "ollama") {
         return { stream: await ollamaStream(req), source: "ollama-gemma4" };

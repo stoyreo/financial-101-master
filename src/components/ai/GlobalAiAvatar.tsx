@@ -99,12 +99,17 @@ function useGeneralSnapshot(active: boolean): GeneralChatSnapshot | null {
   }, [active, scenario?.name, monthlyIncome, monthlyExpenses, monthlyDebtPayments, totalDebtBalance, totalInvestmentValue, netWorth, mortgage]);
 }
 
+const OLLAMA_MODELS = ["gemma4", "gemma3", "llama3.2", "mistral", "phi4"];
+type AiProvider = "ollama" | "claude";
+
 export default function GlobalAiAvatar() {
   const signedIn = useSignedIn();
   const [open, setOpen] = useState(false);
   const [pendingTarget, setPendingTarget] = useState<ThrowTarget | null>(null);
   const [status, setStatus] = useState("Ready to help");
   const [load, setLoad] = useState(12);
+  const [provider, setProvider] = useState<AiProvider>("ollama");
+  const [ollamaModel, setOllamaModel] = useState("gemma4");
 
   // Page-specific registration (e.g. /expenses/actuals's rich budget snapshot)
   // wins; otherwise fall back to the generic whole-of-plan snapshot below.
@@ -136,11 +141,11 @@ export default function GlobalAiAvatar() {
 
   return (
     <>
-      {/* Avatar dock — only visible when chat is open */}
+      {/* Avatar dock — only visible when chat is open, positioned above the chat panel */}
       {open && (
         <div
           className="hidden md:block"
-          style={{ position: "fixed", right: 20, bottom: "auto", top: "calc(50% - 612px)", zIndex: 70 }}
+          style={{ position: "fixed", right: 20, bottom: "auto", top: "calc(50% - 455px)", zIndex: 70 }}
         >
           <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
         </div>
@@ -201,6 +206,30 @@ export default function GlobalAiAvatar() {
               <X className="h-3.5 w-3.5" style={{ color: "#94a3b8" }} />
             </button>
           </div>
+
+          {/* Provider / model selector */}
+          <div className="flex items-center gap-1.5 px-1 shrink-0">
+            <select
+              value={provider}
+              onChange={e => setProvider(e.target.value as AiProvider)}
+              className="flex-1 rounded-md px-2 py-1 text-[10px] font-medium outline-none cursor-pointer"
+              style={{ background: "rgba(37,99,235,0.2)", border: "1px solid rgba(96,165,250,0.25)", color: "#93c5fd" }}
+            >
+              <option value="ollama">Ollama (local)</option>
+              <option value="claude">Anthropic Claude</option>
+            </select>
+            {provider === "ollama" && (
+              <select
+                value={ollamaModel}
+                onChange={e => setOllamaModel(e.target.value)}
+                className="rounded-md px-2 py-1 text-[10px] font-medium outline-none cursor-pointer"
+                style={{ background: "rgba(15,23,42,0.6)", border: "1px solid rgba(255,255,255,0.1)", color: "#cbd5e1" }}
+              >
+                {OLLAMA_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            )}
+          </div>
+
           <div className="flex-1 min-h-0">
             <AiChatPanel
               snapshot={snapshot}
@@ -208,6 +237,8 @@ export default function GlobalAiAvatar() {
               pendingTarget={pendingTarget}
               onConsumeTarget={consumeTarget}
               quickActions={quickActions}
+              provider={provider}
+              ollamaModel={ollamaModel}
             />
           </div>
         </div>
