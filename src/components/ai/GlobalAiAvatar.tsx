@@ -136,14 +136,15 @@ export default function GlobalAiAvatar() {
 
   return (
     <>
-      {/* Avatar dock — always present so it can be dragged onto any page element,
-          regardless of whether the chat card is open. */}
-      <div
-        className="hidden md:block"
-        style={{ position: "fixed", right: 20, bottom: "auto", top: open ? "calc(50% - 612px)" : "calc(50% - 88px)", zIndex: 70, transition: "top 180ms ease" }}
-      >
-        <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
-      </div>
+      {/* Avatar dock — only visible when chat is open */}
+      {open && (
+        <div
+          className="hidden md:block"
+          style={{ position: "fixed", right: 20, bottom: "auto", top: "calc(50% - 612px)", zIndex: 70 }}
+        >
+          <HumanoidDragAgent onThrow={handleThrow} status={status} load={load} />
+        </div>
+      )}
 
       {/* Launcher orb */}
       {!open && (
