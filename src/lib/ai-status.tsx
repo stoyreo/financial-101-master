@@ -11,6 +11,7 @@ import React, {
 interface AiStatusState {
   available: boolean;
   loading: boolean;
+  provider?: string;
   reason?: string;
 }
 
@@ -34,8 +35,8 @@ export function AiStatusProvider({ children }: { children: React.ReactNode }) {
         cache: "default",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as { available: boolean; reason?: string };
-      setState({ available: data.available, loading: false, reason: data.reason });
+      const data = (await res.json()) as { available: boolean; provider?: string; reason?: string };
+      setState({ available: data.available, loading: false, provider: data.provider, reason: data.reason });
     } catch {
       setState({ available: true, loading: false });
     }

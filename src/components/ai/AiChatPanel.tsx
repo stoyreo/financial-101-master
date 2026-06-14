@@ -31,6 +31,8 @@ export interface AiChatPanelProps {
   provider?: "ollama" | "claude";
   /** Ollama model name. Defaults to "gemma4". */
   ollamaModel?: string;
+  /** Hide the inner panel header (use when the parent already renders a title). */
+  hideHeader?: boolean;
 }
 
 type Role = "user" | "assistant";
@@ -85,6 +87,7 @@ export function AiChatPanel({
   quickActions = DEFAULT_QUICK_ACTIONS,
   provider = "ollama",
   ollamaModel = "gemma4",
+  hideHeader = false,
 }: AiChatPanelProps) {
   const { available: aiAvailable } = useAiStatus();
   const [messages, setMessages] = useState<ChatMsg[]>([{
@@ -186,7 +189,7 @@ export function AiChatPanel({
     <div className="ai-chat-panel flex flex-col h-full min-h-0 rounded-xl overflow-hidden border" style={{ background: "rgba(15,23,42,0.55)", borderColor: "rgba(96,165,250,0.16)" }}>
       <style dangerouslySetInnerHTML={{ __html: "@keyframes aiDotPulse { 0%,80%,100% { opacity:.25; transform: translateY(0);} 40% { opacity:1; transform: translateY(-2px);} }" }} />
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: "rgba(96,165,250,0.12)" }}>
+      {!hideHeader && <div className="flex items-center justify-between px-3 py-2 border-b shrink-0" style={{ borderColor: "rgba(96,165,250,0.12)" }}>
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="h-3.5 w-3.5 shrink-0" style={{ color: "#60a5fa" }} />
           <div className="min-w-0">

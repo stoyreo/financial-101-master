@@ -43,6 +43,7 @@ import {
   selectNetWorth,
 } from "@/lib/store";
 import { useAiSnapshotContext } from "@/lib/ai-snapshot-context";
+import { useAiStatus } from "@/lib/ai-status";
 import { buildGeneralChatSnapshot, describeSnapshot, type GeneralChatSnapshot } from "@/lib/ai-chat-context";
 
 const SESSION_POLL_MS = 2000;
@@ -104,6 +105,7 @@ type AiProvider = "ollama" | "claude";
 
 export default function GlobalAiAvatar() {
   const signedIn = useSignedIn();
+  const aiStatus = useAiStatus();
   const [open, setOpen] = useState(false);
   const [pendingTarget, setPendingTarget] = useState<ThrowTarget | null>(null);
   const [status, setStatus] = useState("Ready to help");
@@ -197,7 +199,26 @@ export default function GlobalAiAvatar() {
           <div className="flex items-center justify-between shrink-0 px-1 pb-2">
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5" style={{ color: "#60a5fa" }} />
-              <span className="text-[11px] font-semibold" style={{ color: "#cbd5e1" }}>Fin — your AI assistant</span>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold" style={{ color: "#cbd5e1" }}>Fin — your AI assistant</span>
+                  {!aiStatus.loading && (
+                    <span
+                      title={aiStatus.available ? `Connected (${aiStatus.provider ?? "AI"})` : "AI unavailable"}
+                      style={{
+                        display: "inline-block",
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        background: aiStatus.available ? "#22c55e" : "#ef4444",
+                        boxShadow: aiStatus.available ? "0 0 5px #22c55e" : "0 0 5px #ef4444",
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </div>
+                {snapshotLabel && <div className="text-[10px] truncate" style={{ color: "#64748b" }}>{snapshotLabel}</div>}
+              </div>
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -240,6 +261,7 @@ export default function GlobalAiAvatar() {
               quickActions={quickActions}
               provider={provider}
               ollamaModel={ollamaModel}
+              hideHeader
             />
           </div>
         </div>
