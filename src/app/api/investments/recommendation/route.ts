@@ -180,11 +180,16 @@ Return STRICT JSON only as specified.`;
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
+      // If the model stopped because it hit the token cap, the JSON is
+      // truncated — say so plainly rather than blaming a parse error.
+      const truncated = (msg as any)?.stop_reason === "max_tokens";
       return NextResponse.json(
         {
           error: "parse_failed",
-          reason: "model_did_not_return_valid_json",
-          message: "The AI responded but didn't return a usable recommendation. Please try again.",
+          reason: truncated ? "response_truncated" : "model_did_not_return_valid_json",
+          message: truncated
+            ? "The recommendation was cut off before finishing. Please try again."
+            : "The AI responded but didn't return a usable recommendation. Please try again.",
           raw: textOut,
         },
         { status: 502 },
