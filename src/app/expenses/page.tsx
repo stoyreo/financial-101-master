@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useStore, selectTotalMonthlyExpenses, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
 import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "@/lib/engine/tax";
-import { budgetVsActual, topBudgetGaps, totalActuals, listMonths, ymLabel } from "@/lib/actuals";
+import { budgetVsActualAllTime, allTimeActualsByCategory, topBudgetGaps, topTransactionsForCategory, listMonths, ymLabel } from "@/lib/actuals";
 import { getCurrentAccount } from "@/lib/accounts";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
@@ -12,7 +12,7 @@ import {
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
   InfoTooltip, AITokenMeter
 } from "@/components/ui";
-import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X, Gauge, AlertTriangle, ArrowRight, PlusCircle } from "lucide-react";
+import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X, Gauge, AlertTriangle, ArrowRight, PlusCircle, ChevronRight } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 const PVD_RATE = 0.10;
@@ -159,6 +159,8 @@ export default function ExpensesPage() {
   const [catManagerOpen, setCatManagerOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [catError, setCatError] = useState<string | null>(null);
+  const [expandedGap, setExpandedGap] = useState<string | null>(null);
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
 
   const allCategories = [
     ...DEFAULT_EXPENSE_CATEGORIES,
@@ -197,13 +199,18 @@ export default function ExpensesPage() {
     t => t.accountId === activeAccountId || !t.accountId
   );
   const months = listMonths(transactions);
-  const latestMonth = months[months.length - 1];
+  const monthCount = months.length;
+  const hasActuals = monthCount > 0;
   const netMonthlyIncome = (() => {
     const b = computeIncomeTaxBreakdown(store.incomes, { pvdRate: PVD_RATE, pvdBaseOffset: PVD_BASE_OFFSET });
     return (b.grossAnnualIncome - b.estimatedTax - b.ssoDeduction - b.pvdDeduction) / 12;
   })();
-  const actualSpend = latestMonth ? totalActuals(transactions, latestMonth) : 0;
-  const bvaRows = latestMonth ? budgetVsActual(expenses, transactions, latestMonth) : [];
+  // Average monthly actual across ALL imported months/years.
+  const allTimeTotals = allTimeActualsByCategory(transactions);
+  const actualSpend = hasActuals
+    ? Object.values(allTimeTotals).reduce((s, v) => s + v, 0) / monthCount
+    : 0;
+  const bvaRows = hasActuals ? budgetVsActualAllTime(expenses, transactions) : [];
   const gaps = topBudgetGaps(bvaRows);
   const totalGap = gaps.reduce((s, g) => s + g.gap, 0);
   const surplus = netMonthlyIncome - actualSpend;
@@ -247,6 +254,20 @@ export default function ExpensesPage() {
     .filter(e => filterCat === "all" || e.category === filterCat)
     .filter(e => filterEssential === "all" || (filterEssential === "essential" ? e.isEssential : !e.isEssential))
     .sort((a, b) => toMonthly(b.amount, b.frequency) - toMonthly(a.amount, a.frequency));
+
+  // Group budget items by category with a monthly subtotal, ranked by subtotal.
+  const grouped = (() => {
+    const map: Record<string, ExpenseItem[]> = {};
+    for (const e of filtered) (map[e.category] ??= []).push(e);
+    return Object.entries(map)
+      .map(([category, items]) => ({
+        category,
+        items,
+        subtotal: items.reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0),
+      }))
+      .sort((a, b) => b.subtotal - a.subtotal);
+  })();
+  const toggleCat = (cat: string) => setCollapsedCats(s => ({ ...s, [cat]: !s[cat] }));
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -313,13 +334,15 @@ export default function ExpensesPage() {
             <CardTitle className="text-sm flex items-center gap-2">
               <Gauge size={15} /> Smart Analyzer — Income vs Actual Expense
             </CardTitle>
-            {latestMonth && (
-              <Badge variant="outline">Latest actuals: {ymLabel(latestMonth)}</Badge>
+            {hasActuals && (
+              <Badge variant="outline">
+                {monthCount} month{monthCount > 1 ? "s" : ""} · {ymLabel(months[0])}–{ymLabel(months[months.length - 1])}
+              </Badge>
             )}
           </div>
         </CardHeader>
         <CardContent>
-          {!latestMonth ? (
+          {!hasActuals ? (
             <div className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/40">
               <div className="text-sm text-muted-foreground">
                 No actual spending imported yet. Import a statement to compare real spend against your budget and surface gaps.
@@ -339,7 +362,7 @@ export default function ExpensesPage() {
                 <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20">
                   <div className="text-xs text-red-700 dark:text-red-300">Actual Spend</div>
                   <div className="text-lg font-bold tabular-nums text-red-800 dark:text-red-200">{thb(actualSpend)}</div>
-                  <div className="text-[11px] text-muted-foreground">{ymLabel(latestMonth)}</div>
+                  <div className="text-[11px] text-muted-foreground">avg/mo · {monthCount} mo</div>
                 </div>
                 <div className={`p-3 rounded-lg ${surplus >= 0 ? "bg-blue-50 dark:bg-blue-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}>
                   <div className="text-xs text-muted-foreground">{surplus >= 0 ? "Surplus" : "Deficit"}</div>
@@ -367,28 +390,76 @@ export default function ExpensesPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {gaps.map(g => (
-                    <div key={g.category} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium truncate">{g.category}</span>
-                          <Badge variant={g.unbudgeted ? "warning" : "outline"}>
-                            {g.unbudgeted ? "No budget" : "Over budget"}
-                          </Badge>
-                          {!g.isEssential && <Badge variant="outline">Discretionary</Badge>}
+                  {gaps.map(g => {
+                    const open = expandedGap === g.category;
+                    const examples = open ? topTransactionsForCategory(transactions, g.category) : [];
+                    return (
+                      <div key={g.category} className="rounded-lg border border-border overflow-hidden transition-colors">
+                        <div
+                          className="flex items-center gap-3 p-3 hover:bg-muted/30 cursor-pointer"
+                          onClick={() => setExpandedGap(open ? null : g.category)}
+                        >
+                          <ChevronRight
+                            size={15}
+                            className={`text-muted-foreground shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium truncate">{g.category}</span>
+                              <Badge variant={g.unbudgeted ? "warning" : "outline"}>
+                                {g.unbudgeted ? "No budget" : "Over budget"}
+                              </Badge>
+                              {!g.isEssential && <Badge variant="outline">Discretionary</Badge>}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                              Actual {thb(g.actual)}/mo
+                              <ArrowRight size={10} className="inline mx-1" />
+                              Budget {thb(g.budget)}/mo
+                              <span className="text-amber-600 dark:text-amber-400 font-medium ml-2">gap {thb(g.gap)}</span>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm" variant="outline"
+                            onClick={e => { e.stopPropagation(); addGapToBudget(g.category, g.suggestedBudget); }}
+                          >
+                            <PlusCircle size={14} /> Budget {thb(g.suggestedBudget)}
+                          </Button>
                         </div>
-                        <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
-                          Actual {thb(g.actual)}/mo
-                          <ArrowRight size={10} className="inline mx-1" />
-                          Budget {thb(g.budget)}/mo
-                          <span className="text-amber-600 dark:text-amber-400 font-medium ml-2">gap {thb(g.gap)}</span>
+                        <div
+                          className="grid transition-all duration-300 ease-out"
+                          style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+                        >
+                          <div className="overflow-hidden">
+                            <div className="px-4 pb-3 pt-1 bg-muted/20 border-t border-border">
+                              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                                High-runner records in {g.category}
+                              </div>
+                              {examples.length === 0 ? (
+                                <div className="text-xs text-muted-foreground py-1">No matching transactions.</div>
+                              ) : (
+                                <div className="space-y-1">
+                                  {examples.map((t, i) => (
+                                    <div
+                                      key={t.id}
+                                      className="flex items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-1"
+                                      style={{ animationDelay: `${i * 40}ms`, animationFillMode: "both" }}
+                                    >
+                                      <div className="min-w-0 flex-1 truncate">
+                                        <span className="text-muted-foreground">{ymLabel(t.billingMonth || t.postDate.slice(0, 7))}</span>
+                                        <span className="mx-1.5">·</span>
+                                        <span className="truncate">{t.description || t.merchantKey || "—"}</span>
+                                      </div>
+                                      <span className="tabular-nums font-medium shrink-0">{thb(t.amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => addGapToBudget(g.category, g.suggestedBudget)}>
-                        <PlusCircle size={14} /> Budget {thb(g.suggestedBudget)}
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-3">
@@ -494,43 +565,72 @@ export default function ExpensesPage() {
                   ))}
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map(item => {
-                  const monthly = toMonthly(item.amount, item.frequency);
-                  return (
-                    <tr key={item.id} className="border-b border-border hover:bg-muted/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{item.name}</div>
-                        <div className="text-xs text-muted-foreground">{item.owner} · {item.frequency}</div>
-                      </td>
-                      <td className="px-4 py-3"><Badge variant="outline">{item.category}</Badge></td>
-                      <td className="px-4 py-3">
-                        <div className="tabular-nums font-medium">{thb(item.amount)}</div>
-                      </td>
-                      <td className="px-4 py-3 tabular-nums">{thb(monthly)}</td>
-                      <td className="px-4 py-3 tabular-nums text-muted-foreground">{pct(item.inflationRate)}/yr</td>
-                      <td className="px-4 py-3">
-                        <Badge variant={item.isEssential ? "default" : "outline"}>
-                          {item.isEssential ? "Essential" : "Discretionary"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={item.isActive ? "success" : "outline"}>{item.isActive ? "Active" : "Off"}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => openEdit(item)} className="p-1.5 hover:bg-accent rounded-md">
-                            <Edit size={14} className="text-muted-foreground" />
-                          </button>
-                          <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-destructive/10 rounded-md">
-                            <Trash2 size={14} className="text-destructive" />
-                          </button>
+              {grouped.map(group => {
+                const collapsed = collapsedCats[group.category];
+                return (
+                  <tbody key={group.category}>
+                    {/* Category subtotal header (click to collapse) */}
+                    <tr
+                      className="border-b border-border bg-muted/40 hover:bg-muted/60 cursor-pointer transition-colors"
+                      onClick={() => toggleCat(group.category)}
+                    >
+                      <td colSpan={3} className="px-4 py-2.5">
+                        <div className="flex items-center gap-2 font-semibold">
+                          <ChevronRight size={14} className={`text-muted-foreground transition-transform duration-200 ${collapsed ? "" : "rotate-90"}`} />
+                          <Badge variant="outline">{group.category}</Badge>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {group.items.length} item{group.items.length > 1 ? "s" : ""}
+                          </span>
                         </div>
                       </td>
+                      <td className="px-4 py-2.5 font-bold tabular-nums">{thb(group.subtotal)}</td>
+                      <td colSpan={4} className="px-4 py-2.5 text-xs text-muted-foreground tabular-nums">
+                        {thb(group.subtotal * 12)}/yr subtotal
+                      </td>
                     </tr>
-                  );
-                })}
-              </tbody>
+                    {/* Items */}
+                    {!collapsed && group.items.map((item, idx) => {
+                      const monthly = toMonthly(item.amount, item.frequency);
+                      return (
+                        <tr
+                          key={item.id}
+                          className="border-b border-border hover:bg-muted/30 transition-colors animate-in fade-in slide-in-from-top-1 duration-200"
+                          style={{ animationDelay: `${idx * 30}ms`, animationFillMode: "both" }}
+                        >
+                          <td className="px-4 py-3 pl-10">
+                            <div className="font-medium">{item.name}</div>
+                            <div className="text-xs text-muted-foreground">{item.owner} · {item.frequency}</div>
+                          </td>
+                          <td className="px-4 py-3"><Badge variant="outline">{item.category}</Badge></td>
+                          <td className="px-4 py-3">
+                            <div className="tabular-nums font-medium">{thb(item.amount)}</div>
+                          </td>
+                          <td className="px-4 py-3 tabular-nums">{thb(monthly)}</td>
+                          <td className="px-4 py-3 tabular-nums text-muted-foreground">{pct(item.inflationRate)}/yr</td>
+                          <td className="px-4 py-3">
+                            <Badge variant={item.isEssential ? "default" : "outline"}>
+                              {item.isEssential ? "Essential" : "Discretionary"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={item.isActive ? "success" : "outline"}>{item.isActive ? "Active" : "Off"}</Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => openEdit(item)} className="p-1.5 hover:bg-accent rounded-md">
+                                <Edit size={14} className="text-muted-foreground" />
+                              </button>
+                              <button onClick={() => handleDelete(item.id)} className="p-1.5 hover:bg-destructive/10 rounded-md">
+                                <Trash2 size={14} className="text-destructive" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                );
+              })}
               <tfoot>
                 <tr className="bg-muted/30">
                   <td colSpan={3} className="px-4 py-3 font-semibold">TOTAL</td>

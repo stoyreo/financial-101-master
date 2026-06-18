@@ -76,13 +76,11 @@ export interface BudgetVsActualRow {
   budgetedItemIds: string[];
 }
 
-export function budgetVsActual(
+/** Build budget-vs-actual rows from a category→monthly-actual map. */
+function rowsFromActualsMap(
   expenses: ExpenseItem[],
-  txns: Transaction[],
-  ym: string
+  actuals: Record<string, number>
 ): BudgetVsActualRow[] {
-  const actuals = actualsByCategory(txns, ym);
-
   const budgetByCat: Record<string, { amount: number; essential: boolean; ids: string[] }> = {};
   for (const e of expenses.filter(e => e.isActive)) {
     const monthly = toMonthly(e.amount, e.frequency);
@@ -113,6 +111,53 @@ export function budgetVsActual(
     });
   }
   return rows.sort((a, b) => b.actual - a.actual);
+}
+
+export function budgetVsActual(
+  expenses: ExpenseItem[],
+  txns: Transaction[],
+  ym: string
+): BudgetVsActualRow[] {
+  return rowsFromActualsMap(expenses, actualsByCategory(txns, ym));
+}
+
+/** Total spend per category across ALL billing months/years. */
+export function allTimeActualsByCategory(txns: Transaction[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const t of txns) {
+    const sign = t.isCredit ? -1 : 1;
+    out[t.category] = (out[t.category] ?? 0) + sign * t.amount;
+  }
+  for (const k of Object.keys(out)) if (out[k] < 0) out[k] = 0;
+  return out;
+}
+
+/**
+ * Budget vs AVERAGE monthly actual computed over every month of data
+ * (all months and years), so the analyzer reflects the full history rather
+ * than a single statement month. Average = all-time total ÷ months observed.
+ */
+export function budgetVsActualAllTime(
+  expenses: ExpenseItem[],
+  txns: Transaction[]
+): BudgetVsActualRow[] {
+  const monthCount = Math.max(1, listMonths(txns).length);
+  const totals = allTimeActualsByCategory(txns);
+  const avg: Record<string, number> = {};
+  for (const k of Object.keys(totals)) avg[k] = totals[k] / monthCount;
+  return rowsFromActualsMap(expenses, avg);
+}
+
+/** The biggest individual debit transactions in a category (high-runner records). */
+export function topTransactionsForCategory(
+  txns: Transaction[],
+  category: string,
+  limit = 5
+): Transaction[] {
+  return txns
+    .filter(t => t.category === category && !t.isCredit)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit);
 }
 
 export interface BudgetGap {
