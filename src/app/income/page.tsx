@@ -2,13 +2,14 @@
 import { useState, useRef } from "react";
 import { useStore, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
+import { computeIncomeTaxBreakdown, TH_PARAMS_2026 } from "@/lib/engine/tax";
 import type { IncomeItem, IncomeCategory, Frequency } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Alert,
-  InfoTooltip, AITokenMeter, recordTokenUsage
+  InfoTooltip, AITokenMeter, recordTokenUsage, Separator
 } from "@/components/ui";
-import { Plus, Edit, Trash2, TrendingUp, DollarSign, Briefcase, PiggyBank, FileUp } from "lucide-react";
+import { Plus, Edit, Trash2, TrendingUp, DollarSign, Briefcase, PiggyBank, FileUp, Receipt } from "lucide-react";
 
 const CATEGORIES: IncomeCategory[] = ["salary", "bonus", "freelance", "rental", "dividend", "interest", "other"];
 const FREQUENCIES: Frequency[] = ["monthly", "yearly", "one-time"];
@@ -86,6 +87,15 @@ function IncomeForm({ item, onChange }: { item: Omit<IncomeItem, "id">; onChange
   );
 }
 
+function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4 py-0.5">
+      <span className={muted ? "text-muted-foreground" : ""}>{label}</span>
+      <span className="font-medium tabular-nums whitespace-nowrap">{value}</span>
+    </div>
+  );
+}
+
 export default function IncomePage() {
   const { incomes, addIncome, updateIncome, deleteIncome } = useStore();
   const store = useStore();
@@ -95,10 +105,15 @@ export default function IncomePage() {
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [sortField, setSortField] = useState<"amount" | "name">("amount");
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [pvdRate, setPvdRate] = useState(10); // employee PVD % of salary
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const totalMonthly = selectTotalMonthlyIncome(store);
   const totalYearly = totalMonthly * 12;
+
+  // Thai-scheme taxable portion: applies Section-40 expense deductions and
+  // deducts SSO + PVD + personal allowance directly in this section.
+  const taxBreakdown = computeIncomeTaxBreakdown(incomes, { pvdRate: pvdRate / 100 });
 
   const openAdd = () => { setFormData(defaultItem()); setEditId(null); setModalOpen(true); };
   const openEdit = (item: IncomeItem) => {
@@ -233,13 +248,72 @@ export default function IncomePage() {
         />
         <StatCard
           title="Taxable Portion"
-          value={pct(incomes.filter(i => i.isActive && i.isTaxable)
-            .reduce((s, i) => s + toMonthly(i.amount, i.frequency), 0) / (totalMonthly || 1))}
+          value={pct(taxBreakdown.taxablePortionPct)}
+          subtitle={`Net taxable ${thb(taxBreakdown.netTaxableIncome)}/yr`}
           icon={PiggyBank}
           color="amber"
-          tooltip="= Σ(taxable items monthly) ÷ Total Monthly Income\n\nisTaxable=false: net payslip imports, tax-exempt dividends."
+          tooltip={"Thailand scheme: share of gross income left taxable after\nSection-40 expense deductions + SSO + PVD + personal allowance.\n\n= Net Taxable Income ÷ Total Annual Income\n\nNaive 'taxable items ÷ total' is replaced by the real net base."}
         />
       </div>
+
+      {/* Thai taxable-portion breakdown */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Receipt size={15} /> Taxable Portion — Thailand scheme (2026)
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">PVD rate</Label>
+              <div className="relative w-20">
+                <NumberInput
+                  step={1} min={0} max={15}
+                  value={pvdRate}
+                  onChange={v => setPvdRate(Math.max(0, Math.min(15, v)))}
+                />
+                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground text-xs">%</span>
+              </div>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+            <Row label="Gross annual income" value={thb(taxBreakdown.grossAnnualIncome)} />
+            <Row label="Taxable sources (assessable)" value={thb(taxBreakdown.taxableGrossIncome)} />
+            <Row label="− Employment expense deduction (50%, max ฿100K)" value={`−${thb(taxBreakdown.employmentExpenseDeduction)}`} muted />
+            <Row label="− Rental expense deduction (30%)" value={`−${thb(taxBreakdown.rentalExpenseDeduction)}`} muted />
+            <Row label="− SSO contribution (capped ฿875/mo)" value={`−${thb(taxBreakdown.ssoDeduction)}`} muted />
+            <Row label={`− Provident fund (${pvdRate}% of salary)`} value={`−${thb(taxBreakdown.pvdDeduction)}`} muted />
+            <Row label="− Personal allowance" value={`−${thb(taxBreakdown.personalAllowance)}`} muted />
+            <div className="hidden lg:block" />
+          </div>
+          <Separator className="my-3" />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20">
+              <div className="text-xs text-amber-700 dark:text-amber-300">Net Taxable Income</div>
+              <div className="text-xl font-bold tabular-nums text-amber-800 dark:text-amber-200">{thb(taxBreakdown.netTaxableIncome)}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">{pct(taxBreakdown.taxablePortionPct)} of gross</div>
+            </div>
+            <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20">
+              <div className="text-xs text-red-700 dark:text-red-300">Estimated Tax (PIT)</div>
+              <div className="text-xl font-bold tabular-nums text-red-800 dark:text-red-200">{thb(taxBreakdown.estimatedTax)}</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Effective {pct(taxBreakdown.effectiveRateOnGross)} of gross</div>
+            </div>
+            <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+              <div className="text-xs text-emerald-700 dark:text-emerald-300">Total Deductions Applied</div>
+              <div className="text-xl font-bold tabular-nums text-emerald-800 dark:text-emerald-200">
+                {thb(taxBreakdown.totalExpenseDeductions + taxBreakdown.totalDirectDeductions)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">Expense + SSO + PVD + allowance</div>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3">
+            Estimate only — not tax advice. Sources marked “Tax-free” are excluded; note that Thai rules treat
+            rental income as assessable (70% taxable after the 30% deduction), so you may want to mark it Taxable.
+            Personal/spouse/child/insurance allowances beyond the standard ฿60K are handled on the Tax page.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap">

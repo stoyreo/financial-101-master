@@ -26,7 +26,7 @@
  *   - Child deduction: 30,000 per child (2nd+ 60,000)
  */
 
-import type { TaxAssumptions } from "../types";
+import type { TaxAssumptions, IncomeItem } from "../types";
 
 const BRACKETS = [
   { limit: 150_000, rate: 0 },
@@ -182,6 +182,147 @@ export function computeTax(t: TaxAssumptions): TaxResult {
     taxSavedByPVD,
     additionalRMFRoom,
     additionalSSFRoom,
+  };
+}
+
+// ============================================================
+// INCOME-PAGE TAXABLE PORTION (Thailand scheme)
+// ────────────────────────────────────────────────────────────
+// Derives the *real* taxable portion of income straight from the
+// income items, so the Income page can show what fraction of gross
+// income is actually subject to tax — with SSO + PVD + the personal
+// allowance deducted directly in that section to keep it simple.
+//
+// Statutory parameters effective from January 2026:
+//   - SSO employee contribution: 5% of monthly wage, capped at the
+//     new ฿17,500 wage ceiling → max ฿875/mo (฿10,500/yr).
+//   - Employment income (Section 40(1)/(2)): 50% standard expense
+//     deduction, COMBINED cap ฿100,000.
+//   - Rental income (Section 40(5)): 30% standard expense deduction.
+//   - PVD: deductible up to 15% of salary, within the ฿500,000
+//     combined retirement cap (PVD + RMF + SSF).
+//   - Personal allowance: ฿60,000.
+// ============================================================
+
+export const TH_PARAMS_2026 = {
+  ssoEmployeeRate: 0.05,
+  ssoMonthlyEmployeeMax: 875, // ฿17,500 ceiling × 5%, from Jan 2026
+  pvdMaxRate: 0.15,
+  retirementCombinedCap: 500_000,
+  personalAllowance: 60_000,
+  employmentDeductionRate: 0.5,
+  employmentDeductionCap: 100_000,
+  rentalExpenseRate: 0.30,
+} as const;
+
+const EMPLOYMENT_CATEGORIES = new Set(["salary", "bonus", "freelance"]);
+
+/** Annualize an income item, matching the Income page's monthly totals
+ *  (yearly as-is, monthly ×12, one-time excluded). */
+function annualizeIncome(item: IncomeItem): number {
+  if (item.frequency === "yearly") return item.amount;
+  if (item.frequency === "monthly") return item.amount * 12;
+  return 0; // one-time excluded
+}
+
+export interface IncomeTaxBreakdown {
+  grossAnnualIncome: number;          // all active income, annualized
+  taxableGrossIncome: number;         // active + taxable sources only
+  employmentIncome: number;
+  rentalIncome: number;
+  otherTaxableIncome: number;
+  // Section-40 standard expense deductions
+  employmentExpenseDeduction: number;
+  rentalExpenseDeduction: number;
+  totalExpenseDeductions: number;
+  // Direct statutory deductions (shown on the income section)
+  ssoDeduction: number;
+  pvdDeduction: number;
+  personalAllowance: number;
+  totalDirectDeductions: number;
+  // Results
+  netTaxableIncome: number;
+  taxablePortionPct: number;          // netTaxableIncome ÷ grossAnnualIncome
+  estimatedTax: number;
+  effectiveRateOnGross: number;
+  pvdRate: number;
+}
+
+/**
+ * Compute the Thai-scheme taxable portion directly from income items.
+ * @param incomes  income list (active + taxable items are used)
+ * @param opts.pvdRate  employee PVD rate as a fraction of salary (e.g. 0.10)
+ * @param opts.ssoAnnual  override annual SSO contribution (default: computed at the 2026 cap)
+ * @param opts.personalAllowance  override personal allowance (default ฿60,000)
+ */
+export function computeIncomeTaxBreakdown(
+  incomes: IncomeItem[],
+  opts: { pvdRate?: number; ssoAnnual?: number; personalAllowance?: number } = {}
+): IncomeTaxBreakdown {
+  const p = TH_PARAMS_2026;
+  const active = incomes.filter(i => i.isActive);
+  const grossAnnualIncome = active.reduce((s, i) => s + annualizeIncome(i), 0);
+
+  let employmentIncome = 0;
+  let salaryIncome = 0;
+  let rentalIncome = 0;
+  let otherTaxableIncome = 0;
+
+  for (const i of active.filter(i => i.isTaxable)) {
+    const a = annualizeIncome(i);
+    if (i.category === "salary") salaryIncome += a;
+    if (EMPLOYMENT_CATEGORIES.has(i.category)) employmentIncome += a;
+    else if (i.category === "rental") rentalIncome += a;
+    else otherTaxableIncome += a;
+  }
+
+  const taxableGrossIncome = employmentIncome + rentalIncome + otherTaxableIncome;
+
+  const employmentExpenseDeduction = Math.min(
+    employmentIncome * p.employmentDeductionRate,
+    p.employmentDeductionCap
+  );
+  const rentalExpenseDeduction = rentalIncome * p.rentalExpenseRate;
+  const totalExpenseDeductions = employmentExpenseDeduction + rentalExpenseDeduction;
+
+  // SSO: 5% of monthly salary, capped at the 2026 ceiling.
+  const monthlySalary = salaryIncome / 12;
+  const ssoDeduction =
+    opts.ssoAnnual ?? Math.min(monthlySalary * p.ssoEmployeeRate, p.ssoMonthlyEmployeeMax) * 12;
+
+  // PVD: rate × salary, within the ฿500,000 combined retirement cap.
+  const pvdRate = Math.min(Math.max(opts.pvdRate ?? 0, 0), p.pvdMaxRate);
+  const pvdDeduction = Math.min(salaryIncome * pvdRate, p.retirementCombinedCap);
+
+  const personalAllowance = opts.personalAllowance ?? p.personalAllowance;
+  const totalDirectDeductions = ssoDeduction + pvdDeduction + personalAllowance;
+
+  const netTaxableIncome = Math.max(
+    0,
+    taxableGrossIncome - totalExpenseDeductions - totalDirectDeductions
+  );
+  const estimatedTax = calcThaiTax(netTaxableIncome);
+  const taxablePortionPct = grossAnnualIncome > 0 ? netTaxableIncome / grossAnnualIncome : 0;
+  const effectiveRateOnGross = grossAnnualIncome > 0 ? estimatedTax / grossAnnualIncome : 0;
+
+  return {
+    grossAnnualIncome,
+    taxableGrossIncome,
+    employmentIncome,
+    rentalIncome,
+    otherTaxableIncome,
+    employmentExpenseDeduction,
+    rentalExpenseDeduction,
+    totalExpenseDeductions,
+    ssoDeduction,
+    pvdDeduction,
+    personalAllowance,
+    totalDirectDeductions,
+    netTaxableIncome,
+    taxablePortionPct,
+    estimatedTax,
+    effectiveRateOnGross,
+    pvdRate,
   };
 }
 
