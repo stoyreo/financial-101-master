@@ -30,21 +30,24 @@ export interface MortgageParams {
   // Optional rate change (scenario)
   rateChangeDate?: string;
   newRateAfterChange?: number;
-  /** Planned total-monthly-payment step-ups by calendar year. When the
-   *  current row's calendar year is >= an entry's year, that entry's
-   *  monthlyPayment replaces standard+extra for the month (the most recent
-   *  applicable entry wins, and it carries forward until the next one). */
+  /** Planned total-monthly-payment step-ups, each covering a [startYear,
+   *  endYear] calendar-year range (endYear undefined = open-ended, i.e. keep
+   *  paying this amount until the loan is paid off or a later/more-specific
+   *  entry takes over). That entry's monthlyPayment replaces standard+extra
+   *  for any month whose calendar year falls in its range. */
   plannedPayments?: PlannedPayment[];
 }
 
-/** Find the planned-payment amount that applies for a given calendar year,
- *  i.e. the entry with the largest year <= calYear. Returns undefined if no
- *  entry applies yet (calYear is before the earliest planned entry). */
+/** Find the planned-payment amount that applies for a given calendar year:
+ *  among all entries whose [startYear, endYear] range contains calYear, the
+ *  one with the latest startYear wins (most specific/most recent override).
+ *  Returns undefined if no entry's range covers this year. */
 function activePlannedPayment(plannedPayments: PlannedPayment[] | undefined, calYear: number): number | undefined {
   if (!plannedPayments || plannedPayments.length === 0) return undefined;
   let best: PlannedPayment | undefined;
   for (const p of plannedPayments) {
-    if (p.year <= calYear && (!best || p.year > best.year)) best = p;
+    const inRange = calYear >= p.startYear && (p.endYear === undefined || calYear <= p.endYear);
+    if (inRange && (!best || p.startYear > best.startYear)) best = p;
   }
   return best?.monthlyPayment;
 }

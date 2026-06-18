@@ -68,13 +68,16 @@ export interface ExpenseItem {
 }
 
 // ── Debts ────────────────────────────────────────────────
-/** A planned total monthly payment that takes effect from a given calendar
- *  year onward, until superseded by the next entry (sorted by year). Lets a
- *  borrower plan incremental step-up payments (e.g. Y2, Y3, Y4...) on a
- *  mortgage instead of a single flat extra payment for the whole term. */
+/** A planned total monthly payment that applies for a calendar-year range.
+ *  Lets a borrower plan incremental step-up payments (e.g. Y2, Y3, Y4...) on
+ *  a mortgage instead of a single flat extra payment for the whole term. */
 export interface PlannedPayment {
-  year: number;            // calendar year this payment amount starts applying
-  monthlyPayment: number;  // total planned monthly payment (replaces standard + extra for that year)
+  startYear: number;       // calendar year this payment amount starts applying
+  /** Calendar year this amount stops applying (inclusive). Omit/undefined =
+   *  open-ended — keep paying this amount until the loan is fully paid off
+   *  (or until a later entry's startYear takes over). */
+  endYear?: number;
+  monthlyPayment: number;  // total planned monthly payment (replaces standard + extra for the range)
 }
 
 export interface DebtAccount {

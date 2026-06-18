@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useStore, selectTotalMonthlyExpenses, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
 import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "@/lib/engine/tax";
-import { allTimeActualsByCategory, smartTopBudgetGaps, topTransactionsForGap, listMonths, ymLabel } from "@/lib/actuals";
+import { allTimeActualsByCategory, smartTopBudgetGaps, topTransactionsForGap, listMonths, ymLabel, collectUnmatchedTransactions, type AiMatchOverrides } from "@/lib/actuals";
 import { getCurrentAccount } from "@/lib/accounts";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
@@ -161,6 +161,9 @@ export default function ExpensesPage() {
   const [catError, setCatError] = useState<string | null>(null);
   const [expandedGap, setExpandedGap] = useState<string | null>(null);
   const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({});
+  const [aiMatches, setAiMatches] = useState<AiMatchOverrides>({});
+  const [aiMatchLoading, setAiMatchLoading] = useState(false);
+  const [aiMatchError, setAiMatchError] = useState<string | null>(null);
 
   const allCategories = [
     ...DEFAULT_EXPENSE_CATEGORIES,
@@ -210,10 +213,47 @@ export default function ExpensesPage() {
   const actualSpend = hasActuals
     ? Object.values(allTimeTotals).reduce((s, v) => s + v, 0) / monthCount
     : 0;
-  const gaps = hasActuals ? smartTopBudgetGaps(expenses, transactions) : [];
+  const gaps = hasActuals ? smartTopBudgetGaps(expenses, transactions, 6, aiMatches) : [];
   const totalGap = gaps.reduce((s, g) => s + g.gap, 0);
   const surplus = netMonthlyIncome - actualSpend;
   const savingsRate = netMonthlyIncome > 0 ? surplus / netMonthlyIncome : 0;
+  const unmatchedForAi = hasActuals ? collectUnmatchedTransactions(expenses, transactions, aiMatches) : [];
+
+  async function runAiMatch() {
+    setAiMatchLoading(true);
+    setAiMatchError(null);
+    try {
+      const candidates = collectUnmatchedTransactions(expenses, transactions, aiMatches)
+        .sort((a, b) => b.amount - a.amount); // biggest-impact transactions first, within the route's cap
+      if (candidates.length === 0) return;
+      const activeItems = expenses.filter(e => e.isActive);
+      const res = await fetch("/api/expenses/ai-match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactions: candidates.map(t => ({
+            id: t.id, description: t.description, merchantKey: t.merchantKey,
+            amount: t.amount, category: t.category, postDate: t.postDate, billingMonth: t.billingMonth,
+          })),
+          items: activeItems.map(i => ({ id: i.id, name: i.name, category: i.category, isEssential: i.isEssential })),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setAiMatchError(json.message || json.error || `AI match failed (${res.status})`);
+        return;
+      }
+      setAiMatches(prev => {
+        const next = { ...prev };
+        for (const m of json.matches ?? []) next[m.transactionId] = m.matchedItemId;
+        return next;
+      });
+    } catch (e: any) {
+      setAiMatchError(e?.message || "AI match request failed");
+    } finally {
+      setAiMatchLoading(false);
+    }
+  }
 
   const addGapToBudget = (category: string, monthlyAmount: number) => {
     setFormData({
@@ -377,13 +417,31 @@ export default function ExpensesPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                 <div className="text-sm font-medium flex items-center gap-1.5">
                   <AlertTriangle size={14} className="text-amber-500" />
                   Top expensive gaps to consider budgeting
                 </div>
-                {totalGap > 0 && <span className="text-xs text-muted-foreground">Unbudgeted/over by {thb(totalGap)}/mo</span>}
+                <div className="flex items-center gap-2">
+                  {totalGap > 0 && <span className="text-xs text-muted-foreground">Unbudgeted/over by {thb(totalGap)}/mo</span>}
+                  {unmatchedForAi.length > 0 && (
+                    <Button
+                      size="sm" variant="outline"
+                      onClick={runAiMatch}
+                      disabled={aiMatchLoading}
+                      title="Ask AI to re-check unmatched transactions against your existing budget items (recurring merchants under different names, split bills, etc.)"
+                    >
+                      <Sparkles size={14} /> {aiMatchLoading ? "AI matching…" : `AI Match (${unmatchedForAi.length})`}
+                    </Button>
+                  )}
+                </div>
               </div>
+
+              {aiMatchError && (
+                <div className="mb-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-xs text-amber-800 dark:text-amber-200">
+                  {aiMatchError}
+                </div>
+              )}
 
               {gaps.length === 0 ? (
                 <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-sm text-emerald-800 dark:text-emerald-200">
@@ -394,7 +452,7 @@ export default function ExpensesPage() {
                   {gaps.map(g => {
                     const gapKey = `${g.category}::${g.matchedItemName ?? "unmatched"}`;
                     const open = expandedGap === gapKey;
-                    const examples = open ? topTransactionsForGap(transactions, expenses, g) : [];
+                    const examples = open ? topTransactionsForGap(transactions, expenses, g, 5, aiMatches) : [];
                     return (
                       <div key={gapKey} className="rounded-lg border border-border overflow-hidden transition-colors">
                         <div
@@ -416,6 +474,11 @@ export default function ExpensesPage() {
                               <Badge variant={g.unbudgeted ? "warning" : "outline"}>
                                 {g.unbudgeted ? "No matching budget item" : "Over its own budget"}
                               </Badge>
+                              {g.aiMatched && (
+                                <Badge variant="outline" title="This match was found by AI, not the keyword heuristic">
+                                  <Sparkles size={10} className="inline mr-1" />AI matched
+                                </Badge>
+                              )}
                               {!g.isEssential && <Badge variant="outline">Discretionary</Badge>}
                             </div>
                             <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">

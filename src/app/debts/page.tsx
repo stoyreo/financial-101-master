@@ -120,11 +120,12 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
           <div className="col-span-2">
             <div className="flex items-center gap-1.5">
               <Label>Planned Payment Schedule</Label>
-              <InfoTooltip content="Set a total planned monthly payment (standard + extra combined) starting from any calendar year, e.g. Y2, Y3, Y4. Each amount carries forward until the next year you specify — useful for step-up payback plans." />
+              <InfoTooltip content="Set a total planned monthly payment (standard + extra combined) for a from-year to until-year range, e.g. 2027–2029. Toggle 'Until fully paid' to leave the range open-ended instead of picking an end year. Useful for step-up payback plans." />
             </div>
             <div className="mt-1 space-y-2">
               {(item.plannedPayments ?? []).map((p, idx) => {
                 const list = item.plannedPayments ?? [];
+                const untilPaidOff = p.endYear === undefined;
                 const update = (patch: Partial<PlannedPayment>) => {
                   const next = list.map((row, i) => i === idx ? { ...row, ...patch } : row);
                   onChange("plannedPayments", next);
@@ -133,17 +134,38 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
                   onChange("plannedPayments", list.filter((_, i) => i !== idx));
                 };
                 return (
-                  <div key={idx} className="flex items-center gap-2">
-                    <div className="w-28">
-                      <NumberInput value={p.year} onChange={v => update({ year: v })} placeholder="Year" />
+                  <div key={idx} className="rounded-lg border border-border p-2.5 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-24">
+                        <Label className="text-xs">From year</Label>
+                        <NumberInput value={p.startYear} onChange={v => update({ startYear: v })} placeholder="Year" className="mt-0.5" />
+                      </div>
+                      <span className="text-xs text-muted-foreground mt-4">→</span>
+                      <div className="w-24">
+                        <Label className="text-xs">Until year</Label>
+                        <NumberInput
+                          value={p.endYear ?? p.startYear}
+                          onChange={v => update({ endYear: v })}
+                          placeholder="Year"
+                          disabled={untilPaidOff}
+                          className="mt-0.5"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <Label className="text-xs">Total monthly payment (฿)</Label>
+                        <NumberInput value={p.monthlyPayment} onChange={v => update({ monthlyPayment: v })} placeholder="Monthly payment" className="mt-0.5" />
+                      </div>
+                      <button type="button" onClick={remove} className="p-1.5 hover:bg-destructive/10 rounded self-end">
+                        <Trash2 size={13} className="text-destructive" />
+                      </button>
                     </div>
-                    <span className="text-xs text-muted-foreground">→</span>
-                    <div className="flex-1">
-                      <NumberInput value={p.monthlyPayment} onChange={v => update({ monthlyPayment: v })} placeholder="Total monthly payment (฿)" />
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={untilPaidOff}
+                        onCheckedChange={v => update({ endYear: v ? undefined : p.startYear })}
+                      />
+                      <Label className="text-xs">Until fully paid (no end year)</Label>
                     </div>
-                    <button type="button" onClick={remove} className="p-1.5 hover:bg-destructive/10 rounded">
-                      <Trash2 size={13} className="text-destructive" />
-                    </button>
                   </div>
                 );
               })}
@@ -153,8 +175,8 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
                 size="sm"
                 onClick={() => {
                   const list = item.plannedPayments ?? [];
-                  const nextYear = list.length > 0 ? Math.max(...list.map(p => p.year)) + 1 : new Date(item.startDate).getFullYear() + 1;
-                  onChange("plannedPayments", [...list, { year: nextYear, monthlyPayment: item.standardMonthlyPayment + item.extraMonthlyPayment }]);
+                  const nextYear = list.length > 0 ? Math.max(...list.map(p => p.endYear ?? p.startYear)) + 1 : new Date(item.startDate).getFullYear() + 1;
+                  onChange("plannedPayments", [...list, { startYear: nextYear, endYear: undefined, monthlyPayment: item.standardMonthlyPayment + item.extraMonthlyPayment }]);
                 }}
               >
                 <Plus size={12} /> Add Planned Year
@@ -268,9 +290,9 @@ function MortgageSimulatorPanel({ debts, selectedDebtIds }: { debts: DebtAccount
           <CardHeader><CardTitle className="text-sm">Planned Payment Schedule</CardTitle></CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {[...mortgage.plannedPayments].sort((a, b) => a.year - b.year).map((p, i) => (
+              {[...mortgage.plannedPayments].sort((a, b) => a.startYear - b.startYear).map((p, i) => (
                 <Badge key={i} variant="outline" className="text-xs">
-                  {p.year}: {thb(p.monthlyPayment)}/mo
+                  {p.startYear}–{p.endYear ?? "paid off"}: {thb(p.monthlyPayment)}/mo
                 </Badge>
               ))}
             </div>

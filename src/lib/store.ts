@@ -108,6 +108,8 @@ interface Store {
   addMerchantRule: (pattern: string, category: string, isEssential?: boolean) => void;
   removeMerchantRule: (ruleId: string) => void;
   reapplyRules: () => void;
+  aiSuggestStatus: "idle" | "loading" | "error";
+  suggestCategoriesWithAI: (accountId?: string) => Promise<{ suggested: number; applied: number }>;
 
   // ── Forecast ──────────────────────────────────────────
   recomputeForecast: () => void;
@@ -188,6 +190,7 @@ export const useStore = create<Store>()(
       customExpenseCategories: [],
       yearlyForecast: [],
       monthlyForecast: [],
+      aiSuggestStatus: "idle",
       localSyncStatus: "idle",
       remoteSyncStatus: "idle",
       lastLocalSaveTime: null,
@@ -481,6 +484,80 @@ export const useStore = create<Store>()(
           }
         }
       }),
+
+      // Retroactive AI categorization for transactions already sitting in
+      // the store as "Other" / low-confidence. Mirrors the AI fallback pass
+      // that now runs at import time (src/app/api/statements/import), but
+      // can be re-run on demand from the Actuals UI ("Suggest with AI").
+      // Account-scoped: only this account's unmatched transactions are sent.
+      suggestCategoriesWithAI: async (accountId) => {
+        const targets = get().transactions.filter((t: Transaction) => {
+          if (accountId && t.accountId !== accountId) return false;
+          return t.category === "Other" || t.confidence < 0.7;
+        });
+        if (targets.length === 0) return { suggested: 0, applied: 0 };
+
+        set((state) => { state.aiSuggestStatus = "loading"; });
+        try {
+          const res = await fetch("/api/categorize/suggest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items: targets.map((t: Transaction) => ({
+                merchantKey: t.merchantKey,
+                description: t.description,
+              })),
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.error ?? "suggest_failed");
+          }
+          const { suggestions } = (await res.json()) as {
+            suggestions: { merchantKey: string; category: string; confidence: number; rulePattern: string | null }[];
+          };
+          const byKey = new Map(suggestions.map(s => [s.merchantKey, s]));
+
+          let applied = 0;
+          set((state) => {
+            for (const txn of state.transactions as Transaction[]) {
+              if (accountId && txn.accountId !== accountId) continue;
+              if (!(txn.category === "Other" || txn.confidence < 0.7)) continue;
+              const s = byKey.get(txn.merchantKey);
+              if (!s || s.category === "Other") continue;
+
+              txn.category = s.category;
+              // Unconfirmed AI guess — stays below the "rule matched"/"user
+              // confirmed" tier (1.0) so the low-confidence badge still
+              // invites a human to double-check.
+              txn.confidence = Math.min(0.69, Math.max(0.5, s.confidence));
+              applied++;
+
+              // Learn a reusable rule from confident-enough AI guesses, same
+              // as recategorizeTransaction does for manual edits — but never
+              // clobber a rule a human already set ("user"/"default").
+              if (s.rulePattern && s.confidence >= 0.6) {
+                const existing = state.merchantRules.find(
+                  (r: MerchantRule) => r.pattern === s.rulePattern
+                );
+                if (!existing) {
+                  state.merchantRules.push(newMerchantRule(s.rulePattern, s.category, "ai"));
+                } else if (existing.source === "ai") {
+                  existing.category = s.category;
+                }
+              }
+            }
+            state.aiSuggestStatus = "idle";
+          });
+          get().saveUserNamespaceAsync().catch((err) => {
+            console.error("[suggestCategoriesWithAI] save failed", err);
+          });
+          return { suggested: suggestions.length, applied };
+        } catch (err) {
+          set((state) => { state.aiSuggestStatus = "error"; });
+          throw err;
+        }
+      },
 
       // ── Forecast ─────────────────────────────────────
       recomputeForecast: () => set((state) => {
@@ -996,6 +1073,25 @@ export const selectNetWorth = (s: Store) => {
   const assets = s.investments.filter(i => i.isActive).reduce((sum, i) => sum + i.marketValue, 0);
   const liabilities = s.debts.filter(d => d.isActive).reduce((sum, d) => sum + d.currentBalance, 0);
   return assets - liabilities;
+};
+
+/**
+ * Find when net worth is projected to cross from negative to zero/positive.
+ * Reads the already-computed yearlyForecast (mortgage amortization, investment
+ * growth, retirement drawdown, etc. all included) rather than a naive linear
+ * projection off current cash flow.
+ *
+ * Returns null if net worth is already non-negative, or if it never breaks
+ * even within the forecast horizon.
+ */
+export const selectBreakevenAge = (s: Store): { year: number; age: number } | null => {
+  const currentNetWorth = selectNetWorth(s);
+  if (currentNetWorth >= 0) return null;
+
+  const row = s.yearlyForecast.find(y => y.netWorth >= 0);
+  if (!row) return null;
+
+  return { year: row.year, age: row.age };
 };
 
 // ── Account-Filtered Selectors (NEW) ──────────────────

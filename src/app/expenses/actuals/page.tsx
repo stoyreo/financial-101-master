@@ -59,6 +59,7 @@ function ActualsPageInner() {
     clearMonthTransactions, deleteStatementImport, reapplyRules, updateExpense, addExpense,
     customExpenseCategories,
     lineUserId, setLineUserId, lineLastSyncedAt, setLineLastSyncedAt,
+    suggestCategoriesWithAI, aiSuggestStatus,
   } = store;
 
   // ── Read LINE UID from OAuth callback (?line_uid=Uxx…) ─────────────────
@@ -104,6 +105,22 @@ function ActualsPageInner() {
   const [uploading, setUploading] = useState(false);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── AI category suggestion state ───────────────────────
+  const [aiSuggestMsg, setAiSuggestMsg] = useState<string | null>(null);
+  const handleSuggestWithAI = useCallback(async () => {
+    setAiSuggestMsg(null);
+    try {
+      const { suggested, applied } = await suggestCategoriesWithAI(activeAccountId);
+      if (suggested === 0) {
+        setAiSuggestMsg("Nothing to suggest — no Other/low-confidence transactions found.");
+      } else {
+        setAiSuggestMsg(`AI suggested categories for ${applied} of ${suggested} transaction${suggested === 1 ? "" : "s"}.`);
+      }
+    } catch {
+      setAiSuggestMsg("AI suggestion failed — please try again.");
+    }
+  }, [suggestCategoriesWithAI, activeAccountId]);
 
   // ── LINE sync state ────────────────────────────────────
   const [lineSyncing, setLineSyncing] = useState(false);
@@ -827,8 +844,28 @@ function ActualsPageInner() {
             <Button variant="outline" size="sm" onClick={() => reapplyRules()} title="Re-apply merchant rules to all stored transactions">
               <RefreshCw size={12} /> Re-apply rules
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSuggestWithAI}
+              disabled={aiSuggestStatus === "loading"}
+              title="Use AI to suggest categories for Other / low-confidence transactions"
+            >
+              <Sparkles size={12} /> {aiSuggestStatus === "loading" ? "Suggesting…" : "Suggest with AI"}
+            </Button>
           </div>
         </CardHeader>
+        {aiSuggestMsg && (
+          <div className="px-4 pb-0">
+            <div className="flex items-center gap-2 text-xs text-violet-400 bg-violet-500/10 rounded-md px-3 py-1.5">
+              <Sparkles size={12} />
+              <span>{aiSuggestMsg}</span>
+              <button onClick={() => setAiSuggestMsg(null)} className="ml-auto text-muted-foreground hover:text-foreground shrink-0">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
         {/* LINE transactions cross-month hint */}
         {totalLineTxns > 0 && filterSource !== "line" && (
           <div className="px-4 pb-0">

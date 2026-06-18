@@ -28,6 +28,7 @@ import {
   matchRule,
   buildDefaultMerchantRules,
 } from "@/lib/categorize";
+import { suggestCategoriesAI } from "@/lib/ai-categorize";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 90;
@@ -388,6 +389,32 @@ export async function POST(req: Request) {
       txn.dedupeKey = buildDedupeKey(txn);
       return txn;
     });
+
+    // AI fallback pass: anything the rule matcher left as "Other" gets one
+    // shot at an AI-suggested category before it ever reaches the store.
+    // Best-effort — if the AI call fails (no API key, rate limit, etc.) the
+    // transactions just stay "Other" at the original 0.6 confidence, same as
+    // before this feature existed.
+    const unmatched = transactions.filter(t => t.category === "Other");
+    if (unmatched.length > 0) {
+      try {
+        const suggestions = await suggestCategoriesAI(
+          unmatched.map(t => ({ merchantKey: t.merchantKey, description: t.description }))
+        );
+        const byKey = new Map(suggestions.map(s => [s.merchantKey, s]));
+        for (const txn of unmatched) {
+          const s = byKey.get(txn.merchantKey);
+          if (!s || s.category === "Other") continue;
+          txn.category = s.category;
+          // AI guesses are unconfirmed — keep them visibly below the
+          // "rule matched" (1.0) and "user confirmed" tiers so the UI's
+          // low-confidence badge still nudges a human to double-check.
+          txn.confidence = Math.min(0.69, Math.max(0.5, s.confidence));
+        }
+      } catch (err) {
+        console.error("statement import: AI categorize fallback failed", err);
+      }
+    }
 
     const totalCharges = transactions
       .filter(t => !t.isCredit)

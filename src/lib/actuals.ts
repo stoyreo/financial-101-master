@@ -170,6 +170,32 @@ export interface BudgetGap {
   isEssential: boolean;
   /** Name of the specific budget line this gap is keyed to, when it maps to one item (smart-matched). */
   matchedItemName?: string;
+  /** True when this gap's matches came from the AI matcher rather than the keyword heuristic. */
+  aiMatched?: boolean;
+}
+
+/**
+ * Per-transaction AI match overrides: transaction.id -> budget item id, or
+ * `null` when the AI explicitly reasoned that no existing budget item fits.
+ * Produced by POST /api/expenses/ai-match. When a transaction's id is a key
+ * in this map, its value takes priority over matchTransactionToItem's
+ * keyword-overlap heuristic — the whole point of asking the AI is to handle
+ * cases (recurring-but-irregular merchants, split bills, mislabeled
+ * descriptions) the heuristic can't reason about.
+ */
+export type AiMatchOverrides = Record<string, string | null>;
+
+/** Resolve the budget item for a transaction, preferring an AI override when present. */
+function resolveMatch(
+  txn: Transaction,
+  items: ExpenseItem[],
+  aiMatches?: AiMatchOverrides
+): ExpenseItem | undefined {
+  if (aiMatches && Object.prototype.hasOwnProperty.call(aiMatches, txn.id)) {
+    const itemId = aiMatches[txn.id];
+    return itemId ? items.find(i => i.id === itemId) : undefined;
+  }
+  return matchTransactionToItem(txn, items);
 }
 
 /**
@@ -234,6 +260,25 @@ export function matchTransactionToItem(
 }
 
 /**
+ * Debit transactions the keyword heuristic couldn't match to any active
+ * budget item — the candidate set to hand to the AI matcher. Excludes
+ * transactions already overridden by a prior AI pass (those keep whatever
+ * the AI decided last time, including an explicit "no match").
+ */
+export function collectUnmatchedTransactions(
+  expenses: ExpenseItem[],
+  txns: Transaction[],
+  aiMatches?: AiMatchOverrides
+): Transaction[] {
+  const activeItems = expenses.filter(e => e.isActive);
+  return txns.filter(t => {
+    if (t.isCredit) return false;
+    if (aiMatches && Object.prototype.hasOwnProperty.call(aiMatches, t.id)) return false;
+    return !matchTransactionToItem(t, activeItems);
+  });
+}
+
+/**
  * Smarter version of the gap analyzer: instead of comparing whole-category
  * totals (which can flag a category as "over budget" when one already-budgeted
  * line, e.g. a gym membership, is just running alongside unrelated unbudgeted
@@ -246,19 +291,26 @@ export function matchTransactionToItem(
 export function smartTopBudgetGaps(
   expenses: ExpenseItem[],
   txns: Transaction[],
-  limit = 6
+  limit = 6,
+  aiMatches?: AiMatchOverrides
 ): BudgetGap[] {
   const monthCount = Math.max(1, listMonths(txns).length);
   const activeItems = expenses.filter(e => e.isActive);
 
   const matchedTotals: Record<string, number> = {}; // itemId -> all-time actual
   const unmatchedTotals: Record<string, number> = {}; // category -> all-time actual (unmatched)
+  const aiMatchedItemIds = new Set<string>();
 
   for (const t of txns) {
     if (t.isCredit) continue;
-    const item = matchTransactionToItem(t, activeItems);
-    if (item) matchedTotals[item.id] = (matchedTotals[item.id] ?? 0) + t.amount;
-    else unmatchedTotals[t.category] = (unmatchedTotals[t.category] ?? 0) + t.amount;
+    const usedAi = !!aiMatches && Object.prototype.hasOwnProperty.call(aiMatches, t.id);
+    const item = resolveMatch(t, activeItems, aiMatches);
+    if (item) {
+      matchedTotals[item.id] = (matchedTotals[item.id] ?? 0) + t.amount;
+      if (usedAi) aiMatchedItemIds.add(item.id);
+    } else {
+      unmatchedTotals[t.category] = (unmatchedTotals[t.category] ?? 0) + t.amount;
+    }
   }
 
   const gaps: BudgetGap[] = [];
@@ -277,6 +329,7 @@ export function smartTopBudgetGaps(
         suggestedBudget: Math.max(100, Math.ceil(actualMonthly / 100) * 100),
         isEssential: item.isEssential,
         matchedItemName: item.name,
+        aiMatched: aiMatchedItemIds.has(item.id),
       });
     }
   }
@@ -309,13 +362,14 @@ export function topTransactionsForGap(
   txns: Transaction[],
   expenses: ExpenseItem[],
   gap: BudgetGap,
-  limit = 5
+  limit = 5,
+  aiMatches?: AiMatchOverrides
 ): Transaction[] {
   const activeItems = expenses.filter(e => e.isActive);
   return txns
     .filter(t => !t.isCredit && t.category === gap.category)
     .filter(t => {
-      const matched = matchTransactionToItem(t, activeItems);
+      const matched = resolveMatch(t, activeItems, aiMatches);
       return gap.matchedItemName ? matched?.name === gap.matchedItemName : !matched;
     })
     .sort((a, b) => b.amount - a.amount)
