@@ -47,6 +47,16 @@ export function yearAtAge(dob: string, targetAge: number): number {
   return birthYear + targetAge;
 }
 
+/** Probability-weighted expected value of an income item. For most income
+ *  `probability` is undefined (treated as 100%). For STI/bonus items entered
+ *  as a maximum payout with a % chance of hitting it, this returns the
+ *  expected value used everywhere income is totaled or forecast. */
+export function effectiveIncomeAmount(item: { amount: number; probability?: number }): number {
+  const p = item.probability;
+  if (p === undefined || p === null) return item.amount;
+  return item.amount * (Math.max(0, Math.min(100, p)) / 100);
+}
+
 /** Convert frequency amount to monthly */
 export function toMonthly(amount: number, frequency: string): number {
   if (frequency === "monthly") return amount;

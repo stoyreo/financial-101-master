@@ -19,7 +19,7 @@ import type {
   InvestmentAccount, RetirementAssumptions, Scenario,
   YearlyForecastRow, MonthlyForecastRow,
 } from "../types";
-import { calcAge, toYearly, toMonthly, applyGrowth, safeDivide } from "../utils";
+import { calcAge, toYearly, toMonthly, applyGrowth, safeDivide, effectiveIncomeAmount } from "../utils";
 import { buildAmortizationSchedule } from "./mortgage";
 import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "./tax";
 import { parseISO, format, addMonths } from "date-fns";
@@ -38,12 +38,13 @@ function scaleIncomesForYear(incomes: IncomeItem[], year: number, sa: Scenario["
     const startY = parseInt(inc.startDate.split("-")[0], 10) || year;
     const yearsElapsed = Math.max(0, year - startY);
     const growthRate = sa.incomeGrowthRate ?? inc.annualGrowthRate;
-    let amount = applyGrowth(inc.amount, growthRate, yearsElapsed);
+    let amount = applyGrowth(effectiveIncomeAmount(inc), growthRate, yearsElapsed);
     if (sa.incomeShockYear && year >= sa.incomeShockYear &&
         year < (sa.incomeShockYear + Math.ceil((sa.incomeShockDuration ?? 12) / 12))) {
       amount *= (sa.incomeShockFactor ?? 1);
     }
-    return { ...inc, amount };
+    // probability already applied above — drop it so downstream consumers don't double-apply
+    return { ...inc, amount, probability: undefined };
   });
 }
 
@@ -80,7 +81,7 @@ function computeAnnualIncome(incomes: IncomeItem[], year: number, sa: Scenario["
     const startY = parseInt(inc.startDate.split("-")[0], 10) || year;
     const yearsElapsed = Math.max(0, year - startY);
     const growthRate = sa.incomeGrowthRate ?? inc.annualGrowthRate;
-    let annual = toYearly(applyGrowth(inc.amount, growthRate, yearsElapsed), inc.frequency);
+    let annual = toYearly(applyGrowth(effectiveIncomeAmount(inc), growthRate, yearsElapsed), inc.frequency);
 
     // Income shock
     if (sa.incomeShockYear && year >= sa.incomeShockYear &&
@@ -331,14 +332,15 @@ export function generateMonthlyForecast(input: ForecastInput): MonthlyForecastRo
     for (const inc of incomes) {
       if (!inc.isActive) continue;
       const growth = sa.incomeGrowthRate ?? inc.annualGrowthRate;
-      grossMonthly += toMonthly(applyGrowth(inc.amount, growth, yearFraction), inc.frequency);
+      grossMonthly += toMonthly(applyGrowth(effectiveIncomeAmount(inc), growth, yearFraction), inc.frequency);
     }
 
     // Statutory outflow → net take-home (cash into the bank)
     if (monthlyOutflowByYear[year] === undefined) {
       const scaled = incomes.map(inc => ({
         ...inc,
-        amount: applyGrowth(inc.amount, sa.incomeGrowthRate ?? inc.annualGrowthRate, yearFraction),
+        amount: applyGrowth(effectiveIncomeAmount(inc), sa.incomeGrowthRate ?? inc.annualGrowthRate, yearFraction),
+        probability: undefined,
       }));
       const b = computeIncomeTaxBreakdown(scaled, { pvdRate: PVD_RATE, pvdBaseOffset: PVD_BASE_OFFSET });
       monthlyOutflowByYear[year] = (b.estimatedTax + b.ssoDeduction + b.pvdDeduction) / 12;

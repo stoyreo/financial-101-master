@@ -9,6 +9,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { v4 as uuid } from "uuid";
+import { effectiveIncomeAmount } from "./utils";
 import type {
   Profile, IncomeItem, ExpenseItem, DebtAccount,
   InvestmentAccount, RetirementAssumptions, TaxAssumptions, Scenario,
@@ -966,9 +967,10 @@ export const selectMortgage = (s: Store) =>
 
 export const selectTotalMonthlyIncome = (s: Store) =>
   s.incomes.filter(i => i.isActive).reduce((sum, i) => {
-    if (i.frequency === "yearly") return sum + i.amount / 12;
+    const amount = effectiveIncomeAmount(i);
+    if (i.frequency === "yearly") return sum + amount / 12;
     if (i.frequency === "one-time") return sum;
-    return sum + i.amount;
+    return sum + amount;
   }, 0);
 
 export const selectTotalMonthlyExpenses = (s: Store) =>

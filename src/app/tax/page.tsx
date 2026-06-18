@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useStore } from "@/lib/store";
-import { thb, pct } from "@/lib/utils";
+import { thb, pct, effectiveIncomeAmount } from "@/lib/utils";
 import { computeTax, compareTaxVsDebt, PVD_BASE_OFFSET } from "@/lib/engine/tax";
 import type { TaxAssumptions } from "@/lib/types";
 import {
@@ -21,8 +21,10 @@ export default function TaxPage() {
 
   // Pull gross income, bonus, PVD and employment deduction from the Income menu.
   const prefillFromIncome = () => {
-    const annual = (i: typeof incomes[number]) =>
-      i.frequency === "yearly" ? i.amount : i.frequency === "monthly" ? i.amount * 12 : 0;
+    const annual = (i: typeof incomes[number]) => {
+      const amount = effectiveIncomeAmount(i);
+      return i.frequency === "yearly" ? amount : i.frequency === "monthly" ? amount * 12 : 0;
+    };
     const active = incomes.filter(i => i.isActive && i.isTaxable);
     const salaryOnly = active.filter(i => i.category === "salary").reduce((s, i) => s + annual(i), 0);
     const employment = active

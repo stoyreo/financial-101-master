@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useStore, selectTotalMonthlyExpenses, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
 import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "@/lib/engine/tax";
-import { budgetVsActualAllTime, allTimeActualsByCategory, topBudgetGaps, topTransactionsForCategory, listMonths, ymLabel } from "@/lib/actuals";
+import { allTimeActualsByCategory, smartTopBudgetGaps, topTransactionsForGap, listMonths, ymLabel } from "@/lib/actuals";
 import { getCurrentAccount } from "@/lib/accounts";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
@@ -210,8 +210,7 @@ export default function ExpensesPage() {
   const actualSpend = hasActuals
     ? Object.values(allTimeTotals).reduce((s, v) => s + v, 0) / monthCount
     : 0;
-  const bvaRows = hasActuals ? budgetVsActualAllTime(expenses, transactions) : [];
-  const gaps = topBudgetGaps(bvaRows);
+  const gaps = hasActuals ? smartTopBudgetGaps(expenses, transactions) : [];
   const totalGap = gaps.reduce((s, g) => s + g.gap, 0);
   const surplus = netMonthlyIncome - actualSpend;
   const savingsRate = netMonthlyIncome > 0 ? surplus / netMonthlyIncome : 0;
@@ -393,13 +392,14 @@ export default function ExpensesPage() {
               ) : (
                 <div className="space-y-2">
                   {gaps.map(g => {
-                    const open = expandedGap === g.category;
-                    const examples = open ? topTransactionsForCategory(transactions, g.category) : [];
+                    const gapKey = `${g.category}::${g.matchedItemName ?? "unmatched"}`;
+                    const open = expandedGap === gapKey;
+                    const examples = open ? topTransactionsForGap(transactions, expenses, g) : [];
                     return (
-                      <div key={g.category} className="rounded-lg border border-border overflow-hidden transition-colors">
+                      <div key={gapKey} className="rounded-lg border border-border overflow-hidden transition-colors">
                         <div
                           className="flex items-center gap-3 p-3 hover:bg-muted/30 cursor-pointer"
-                          onClick={() => setExpandedGap(open ? null : g.category)}
+                          onClick={() => setExpandedGap(open ? null : gapKey)}
                         >
                           <ChevronRight
                             size={15}
@@ -407,13 +407,21 @@ export default function ExpensesPage() {
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium truncate">{g.category}</span>
+                              <span className="font-medium truncate">
+                                {g.matchedItemName ?? g.category}
+                              </span>
+                              {g.matchedItemName && (
+                                <span className="text-xs text-muted-foreground truncate">({g.category})</span>
+                              )}
                               <Badge variant={g.unbudgeted ? "warning" : "outline"}>
-                                {g.unbudgeted ? "No budget" : "Over budget"}
+                                {g.unbudgeted ? "No matching budget item" : "Over its own budget"}
                               </Badge>
                               {!g.isEssential && <Badge variant="outline">Discretionary</Badge>}
                             </div>
                             <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                              {g.matchedItemName && (
+                                <span className="text-emerald-600 dark:text-emerald-400 mr-2">✓ matched to existing budget line</span>
+                              )}
                               Actual {thb(g.actual)}/mo
                               <ArrowRight size={10} className="inline mx-1" />
                               Budget {thb(g.budget)}/mo
@@ -434,7 +442,9 @@ export default function ExpensesPage() {
                           <div className="overflow-hidden">
                             <div className="px-4 pb-3 pt-1 bg-muted/20 border-t border-border">
                               <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
-                                High-runner records in {g.category}
+                                {g.matchedItemName
+                                  ? `Transactions matched to "${g.matchedItemName}"`
+                                  : `Unmatched / unbudgeted records in ${g.category}`}
                               </div>
                               {examples.length === 0 ? (
                                 <div className="text-xs text-muted-foreground py-1">No matching transactions.</div>

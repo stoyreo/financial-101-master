@@ -9,7 +9,7 @@ import type {
   InvestmentAccount, RetirementAssumptions, TaxAssumptions,
   ScenarioAssumptions, YearlyForecastRow,
 } from "../types";
-import { safeDivide, toYearly, applyGrowth, calcAge } from "../utils";
+import { safeDivide, toYearly, applyGrowth, calcAge, effectiveIncomeAmount } from "../utils";
 
 export interface AnalysisResult {
   moduleId: string;
@@ -54,7 +54,7 @@ export function analyzeInvestmentOptimization(input: InvestmentOptimizationInput
 
   const annualIncome = income
     .filter(i => i.isActive)
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
 
   const annualExpenses = expenses
     .filter(e => e.isActive)
@@ -138,13 +138,13 @@ export function analyzeTaxPlanning(input: TaxPlanningInput): AnalysisResult {
 
   const totalIncome = income
     .filter(i => i.isActive && i.isTaxable)
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
 
   const estimatedTaxLiability = estimateTaxLiability(totalIncome);
 
   const pvdContributions = income
     .filter(i => i.isActive)
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency) * 0.05, 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency) * 0.05, 0);
 
   const rmfEligible = Math.min(totalIncome * 0.15, 500_000);
   const ssfEligible = Math.min(totalIncome * 0.08, 102_000);
@@ -158,7 +158,7 @@ export function analyzeTaxPlanning(input: TaxPlanningInput): AnalysisResult {
 
   const dividendIncome = income
     .filter(i => i.category === "dividend")
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
 
   const dividendTax = dividendIncome * 0.1;
 
@@ -240,7 +240,7 @@ export function analyzeRiskAssessment(input: RiskAssessmentInput): AnalysisResul
     : 0;
 
   const totalDebt = debts.filter(d => d.isActive).reduce((s, d) => s + d.currentBalance, 0);
-  const debtToIncome = safeDivide(totalDebt, income.filter(i => i.isActive).reduce((s, i) => s + toYearly(i.amount, i.frequency), 0));
+  const debtToIncome = safeDivide(totalDebt, income.filter(i => i.isActive).reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0));
 
   const monthlyExpenses = expenses
     .filter(e => e.isActive)
@@ -322,7 +322,7 @@ export function analyzeSavingsAndDebt(input: SavingsDebtInput): AnalysisResult {
 
   const annualIncome = income
     .filter(i => i.isActive)
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
 
   const annualExpenses = expenses
     .filter(e => e.isActive)

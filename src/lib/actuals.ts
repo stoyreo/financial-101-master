@@ -168,6 +168,8 @@ export interface BudgetGap {
   unbudgeted: boolean;     // true when no budget line exists yet
   suggestedBudget: number; // rounded-up actual, a starting budget to set
   isEssential: boolean;
+  /** Name of the specific budget line this gap is keyed to, when it maps to one item (smart-matched). */
+  matchedItemName?: string;
 }
 
 /**
@@ -190,6 +192,134 @@ export function topBudgetGaps(rows: BudgetVsActualRow[], limit = 6): BudgetGap[]
       suggestedBudget: Math.max(100, Math.ceil(r.actual / 100) * 100),
       isEssential: r.isEssential,
     }));
+}
+
+// ── Smart merchant → budget-item mapping ────────────────────────────
+// Generic English stopwords stripped before token-matching a budget item's
+// name against a transaction's merchant text, so "Gym & Fitness" reduces to
+// the meaningful tokens ["gym", "fitness"].
+const NAME_STOPWORDS = new Set([
+  "and", "the", "for", "of", "a", "an", "to", "in", "on", "at", "&",
+  "monthly", "yearly", "domestic", "international",
+]);
+
+function nameTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(w => w.length >= 3 && !NAME_STOPWORDS.has(w));
+}
+
+/**
+ * Find the existing budget item (if any) a transaction most plausibly
+ * belongs to — same category, plus at least one shared meaningful token
+ * between the item's name and the transaction's merchant key/description.
+ * This lets the analyzer recognize "FITNESS FIRST" as already covered by a
+ * "Gym & Fitness" budget line, instead of lumping it into the category total
+ * and flagging the whole category as a blind gap.
+ */
+export function matchTransactionToItem(
+  txn: Transaction,
+  items: ExpenseItem[]
+): ExpenseItem | undefined {
+  const haystack = `${txn.merchantKey ?? ""} ${txn.description ?? ""}`.toLowerCase();
+  const candidates = items.filter(i => i.isActive && i.category === txn.category);
+  let best: { item: ExpenseItem; score: number } | undefined;
+  for (const item of candidates) {
+    const tokens = nameTokens(item.name);
+    const score = tokens.filter(t => haystack.includes(t)).length;
+    if (score > 0 && (!best || score > best.score)) best = { item, score };
+  }
+  return best?.item;
+}
+
+/**
+ * Smarter version of the gap analyzer: instead of comparing whole-category
+ * totals (which can flag a category as "over budget" when one already-budgeted
+ * line, e.g. a gym membership, is just running alongside unrelated unbudgeted
+ * spend, e.g. a doctor visit), this matches each transaction to a specific
+ * existing budget item by name when possible. Gaps are then reported either:
+ *  - against the specific item that's actually running over its own budget, or
+ *  - as genuinely unmatched/unbudgeted spend within the category.
+ * Ranked by absolute gap (THB/mo), largest first.
+ */
+export function smartTopBudgetGaps(
+  expenses: ExpenseItem[],
+  txns: Transaction[],
+  limit = 6
+): BudgetGap[] {
+  const monthCount = Math.max(1, listMonths(txns).length);
+  const activeItems = expenses.filter(e => e.isActive);
+
+  const matchedTotals: Record<string, number> = {}; // itemId -> all-time actual
+  const unmatchedTotals: Record<string, number> = {}; // category -> all-time actual (unmatched)
+
+  for (const t of txns) {
+    if (t.isCredit) continue;
+    const item = matchTransactionToItem(t, activeItems);
+    if (item) matchedTotals[item.id] = (matchedTotals[item.id] ?? 0) + t.amount;
+    else unmatchedTotals[t.category] = (unmatchedTotals[t.category] ?? 0) + t.amount;
+  }
+
+  const gaps: BudgetGap[] = [];
+
+  for (const item of activeItems) {
+    const actualMonthly = (matchedTotals[item.id] ?? 0) / monthCount;
+    const budgetMonthly = toMonthly(item.amount, item.frequency);
+    const gap = actualMonthly - budgetMonthly;
+    if (gap > 0 && actualMonthly > 0) {
+      gaps.push({
+        category: item.category,
+        budget: budgetMonthly,
+        actual: actualMonthly,
+        gap,
+        unbudgeted: false,
+        suggestedBudget: Math.max(100, Math.ceil(actualMonthly / 100) * 100),
+        isEssential: item.isEssential,
+        matchedItemName: item.name,
+      });
+    }
+  }
+
+  for (const [category, total] of Object.entries(unmatchedTotals)) {
+    const actualMonthly = total / monthCount;
+    if (actualMonthly <= 0) continue;
+    const essentialGuess = activeItems.some(i => i.category === category && i.isEssential);
+    gaps.push({
+      category,
+      budget: 0,
+      actual: actualMonthly,
+      gap: actualMonthly,
+      unbudgeted: true,
+      suggestedBudget: Math.max(100, Math.ceil(actualMonthly / 100) * 100),
+      isEssential: essentialGuess,
+    });
+  }
+
+  return gaps.sort((a, b) => b.gap - a.gap).slice(0, limit);
+}
+
+/**
+ * High-runner transactions for a smart gap row: filters to the gap's category
+ * and, when the gap is keyed to a specific matched item, to only the
+ * transactions that matched that item (so "Gym & Fitness" doesn't pull in an
+ * unrelated doctor visit, and vice versa for the unmatched/unbudgeted rows).
+ */
+export function topTransactionsForGap(
+  txns: Transaction[],
+  expenses: ExpenseItem[],
+  gap: BudgetGap,
+  limit = 5
+): Transaction[] {
+  const activeItems = expenses.filter(e => e.isActive);
+  return txns
+    .filter(t => !t.isCredit && t.category === gap.category)
+    .filter(t => {
+      const matched = matchTransactionToItem(t, activeItems);
+      return gap.matchedItemName ? matched?.name === gap.matchedItemName : !matched;
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit);
 }
 
 export interface MonthlyTrendPoint {

@@ -10,7 +10,7 @@ import type {
   Profile, IncomeItem, ExpenseItem, DebtAccount,
   InvestmentAccount, ScenarioAssumptions,
 } from "./types";
-import { safeDivide, toYearly } from "./utils";
+import { safeDivide, toYearly, effectiveIncomeAmount } from "./utils";
 
 export type MenuType = "income" | "expenses" | "investments" | "debts" | "scenarios";
 
@@ -62,7 +62,7 @@ function analyzeIncome(profileData: {
   const { incomes, expenses, debts } = profileData;
 
   const activeIncomes = incomes.filter(i => i.isActive);
-  const totalIncome = activeIncomes.reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+  const totalIncome = activeIncomes.reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
   const totalExpenses = expenses.filter(e => e.isActive).reduce((s, e) => s + toYearly(e.amount, e.frequency), 0);
   const discretionaryIncome = totalIncome - totalExpenses;
 
@@ -138,7 +138,7 @@ function analyzeExpenses(profileData: {
 
   const activeExpenses = expenses.filter(e => e.isActive);
   const totalExpenses = activeExpenses.reduce((s, e) => s + toYearly(e.amount, e.frequency), 0);
-  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
 
   const essentialExpenses = activeExpenses
     .filter(e => e.isEssential)
@@ -205,7 +205,7 @@ function analyzeInvestments(profileData: {
     .filter(i => i.isTaxAdvantaged)
     .reduce((s, i) => s + i.marketValue, 0);
 
-  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
   const totalExpenses = expenses.filter(e => e.isActive).reduce((s, e) => s + toYearly(e.amount, e.frequency), 0);
   const highInterestDebt = debts
     .filter(d => d.isActive && d.annualInterestRate > 0.08)
@@ -286,7 +286,7 @@ function analyzeDebts(profileData: {
 
   const monthlyIncome = incomes
     .filter(i => i.isActive)
-    .reduce((s, i) => s + toYearly(i.amount, i.frequency) / 12, 0);
+    .reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency) / 12, 0);
 
   const dsr = safeDivide(monthlyPayments, monthlyIncome); // Debt Service Ratio
 
@@ -360,7 +360,7 @@ function analyzeScenarios(profileData: {
 }): InsightResult {
   const { profile, incomes, expenses, debts, investments } = profileData;
 
-  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(i.amount, i.frequency), 0);
+  const totalIncome = incomes.filter(i => i.isActive).reduce((s, i) => s + toYearly(effectiveIncomeAmount(i), i.frequency), 0);
   const totalExpenses = expenses.filter(e => e.isActive).reduce((s, e) => s + toYearly(e.amount, e.frequency), 0);
   const totalInvested = investments.filter(i => i.isActive).reduce((s, i) => s + i.marketValue, 0);
   const totalDebt = debts.filter(d => d.isActive).reduce((s, d) => s + d.currentBalance, 0);

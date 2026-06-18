@@ -27,6 +27,7 @@
  */
 
 import type { TaxAssumptions, IncomeItem } from "../types";
+import { effectiveIncomeAmount } from "../utils";
 
 const BRACKETS = [
   { limit: 150_000, rate: 0 },
@@ -224,8 +225,9 @@ const EMPLOYMENT_CATEGORIES = new Set(["salary", "bonus", "freelance"]);
 /** Annualize an income item, matching the Income page's monthly totals
  *  (yearly as-is, monthly ×12, one-time excluded). */
 function annualizeIncome(item: IncomeItem): number {
-  if (item.frequency === "yearly") return item.amount;
-  if (item.frequency === "monthly") return item.amount * 12;
+  const amount = effectiveIncomeAmount(item);
+  if (item.frequency === "yearly") return amount;
+  if (item.frequency === "monthly") return amount * 12;
   return 0; // one-time excluded
 }
 

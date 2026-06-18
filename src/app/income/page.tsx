@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef } from "react";
 import { useStore, selectTotalMonthlyIncome } from "@/lib/store";
-import { thb, toMonthly, pct } from "@/lib/utils";
+import { thb, toMonthly, pct, effectiveIncomeAmount } from "@/lib/utils";
 import { computeIncomeTaxBreakdown, TH_PARAMS_2026, PVD_BASE_OFFSET } from "@/lib/engine/tax";
 import type { IncomeItem, IncomeCategory, Frequency } from "@/lib/types";
 import {
@@ -23,6 +23,7 @@ function defaultItem(): Omit<IncomeItem, "id"> {
     name: "", category: "salary", owner: "Me", frequency: "monthly",
     amount: 0, startDate: new Date().toISOString().split("T")[0],
     annualGrowthRate: 0.04, isTaxable: true, notes: "", isActive: true,
+    probability: 100,
   };
 }
 
@@ -50,9 +51,23 @@ function IncomeForm({ item, onChange }: { item: Omit<IncomeItem, "id">; onChange
         </Select>
       </div>
       <div>
-        <Label>Amount (฿)</Label>
+        <Label>{item.category === "bonus" ? "Maximum Amount (฿)" : "Amount (฿)"}</Label>
         <NumberInput value={item.amount} onChange={v => onChange("amount", v)} className="mt-1" />
       </div>
+      {item.category === "bonus" && (
+        <div>
+          <Label className="flex items-center gap-1">
+            Probability
+            <InfoTooltip content="Chance this bonus actually pays out, e.g. an STI target. Expected value used in all totals and forecasts = Maximum Amount × Probability." />
+          </Label>
+          <div className="relative mt-1">
+            <NumberInput step={1} min={0} max={100}
+              value={item.probability ?? 100}
+              onChange={v => onChange("probability", Math.max(0, Math.min(100, v)))} />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">%</span>
+          </div>
+        </div>
+      )}
       <div>
         <Label>Start Date</Label>
         <Input type="date" value={item.startDate} onChange={e => onChange("startDate", e.target.value)} className="mt-1" />
@@ -359,8 +374,15 @@ export default function IncomePage() {
                       <Badge variant={CATEGORY_COLORS[item.category] as any}>{item.category}</Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{item.frequency}</td>
-                    <td className="px-4 py-3 tabular-nums font-medium">{thb(item.amount)}</td>
-                    <td className="px-4 py-3 tabular-nums">{thb(toMonthly(item.amount, item.frequency))}</td>
+                    <td className="px-4 py-3 tabular-nums font-medium">
+                      {thb(item.amount)}
+                      {item.category === "bonus" && item.probability != null && item.probability < 100 && (
+                        <div className="text-xs text-muted-foreground font-normal">
+                          {item.probability}% chance → {thb(effectiveIncomeAmount(item))} expected
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">{thb(toMonthly(effectiveIncomeAmount(item), item.frequency))}</td>
                     <td className="px-4 py-3 tabular-nums">{pct(item.annualGrowthRate)}/yr</td>
                     <td className="px-4 py-3">
                       <Badge variant={item.isTaxable ? "warning" : "success"}>{item.isTaxable ? "Taxable" : "Tax-free"}</Badge>

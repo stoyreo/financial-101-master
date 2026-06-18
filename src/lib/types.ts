@@ -43,6 +43,10 @@ export interface IncomeItem {
   isTaxable: boolean;
   notes: string;
   isActive: boolean;
+  /** Chance (0-100) this income actually pays out — mainly for STI/bonus items
+   *  where `amount` is entered as the maximum possible payout. Undefined = 100%.
+   *  Expected value used in all forecasts/totals = amount × (probability / 100). */
+  probability?: number;
 }
 
 // ── Expenses ─────────────────────────────────────────────
