@@ -268,6 +268,8 @@ export default function ExpensesPage() {
       .sort((a, b) => b.subtotal - a.subtotal);
   })();
   const toggleCat = (cat: string) => setCollapsedCats(s => ({ ...s, [cat]: !s[cat] }));
+  const collapseAll = () => setCollapsedCats(Object.fromEntries(grouped.map(g => [g.category, true])));
+  const expandAll = () => setCollapsedCats({});
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -548,6 +550,8 @@ export default function ExpensesPage() {
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
         ))}
+        <Button variant="outline" size="sm" onClick={expandAll}>Expand All</Button>
+        <Button variant="outline" size="sm" onClick={collapseAll}>Collapse All</Button>
         <span className="ml-auto text-xs text-muted-foreground">{filtered.length} items</span>
       </div>
 

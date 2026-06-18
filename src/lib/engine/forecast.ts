@@ -138,6 +138,7 @@ function buildDebtSchedules(debts: DebtAccount[], sa: Scenario["assumptions"]) {
         newRateAfterChange: sa.mortgageRateChange
           ? debt.annualInterestRate + sa.mortgageRateChange
           : undefined,
+        plannedPayments: debt.plannedPayments,
       });
     } else {
       // Simple debt: constant payment

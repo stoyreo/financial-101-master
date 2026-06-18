@@ -64,6 +64,15 @@ export interface ExpenseItem {
 }
 
 // ── Debts ────────────────────────────────────────────────
+/** A planned total monthly payment that takes effect from a given calendar
+ *  year onward, until superseded by the next entry (sorted by year). Lets a
+ *  borrower plan incremental step-up payments (e.g. Y2, Y3, Y4...) on a
+ *  mortgage instead of a single flat extra payment for the whole term. */
+export interface PlannedPayment {
+  year: number;            // calendar year this payment amount starts applying
+  monthlyPayment: number;  // total planned monthly payment (replaces standard + extra for that year)
+}
+
 export interface DebtAccount {
   id: string;
   name: string;
@@ -88,6 +97,8 @@ export interface DebtAccount {
   refinanceDate?: string;
   refinanceNewRate?: number;
   refinanceFee?: number;
+  /** Planned total-monthly-payment step-ups by calendar year (mortgage only). */
+  plannedPayments?: PlannedPayment[];
 }
 
 // ── Investments ──────────────────────────────────────────

@@ -4,7 +4,7 @@ import { useStore, selectTotalDebtBalance, selectTotalMonthlyDebtPayments, selec
 import { thb, pct, safeDivide } from "@/lib/utils";
 import { summariseMortgage, compareExtraPaymentScenarios } from "@/lib/engine/mortgage";
 import { calculatePayoffYear, formatPayoffDisplay, computePayoffMonths, computePayoffInfo } from "@/lib/engine/debt-payoff";
-import type { DebtAccount, DebtType, Profile } from "@/lib/types";
+import type { DebtAccount, DebtType, Profile, PlannedPayment } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress, Alert, Tabs, TabsList, TabsTrigger, TabsContent,
@@ -30,7 +30,7 @@ function defaultDebt(): Omit<DebtAccount, "id"> {
     currentBalance: 0, annualInterestRate: 0.07, interestType: "fixed",
     minimumMonthlyPayment: 0, standardMonthlyPayment: 0, extraMonthlyPayment: 0,
     startDate: new Date().toISOString().split("T")[0], notes: "", isActive: true,
-    loanTermMonths: 60,
+    loanTermMonths: 60, plannedPayments: [],
   };
 }
 
@@ -117,6 +117,50 @@ function DebtForm({ item, onChange }: { item: Omit<DebtAccount, "id">; onChange:
             <Label>Refinance Fee (฿)</Label>
             <NumberInput value={item.refinanceFee ?? 0} onChange={v => onChange("refinanceFee", v)} className="mt-1" />
           </div>
+          <div className="col-span-2">
+            <div className="flex items-center gap-1.5">
+              <Label>Planned Payment Schedule</Label>
+              <InfoTooltip content="Set a total planned monthly payment (standard + extra combined) starting from any calendar year, e.g. Y2, Y3, Y4. Each amount carries forward until the next year you specify — useful for step-up payback plans." />
+            </div>
+            <div className="mt-1 space-y-2">
+              {(item.plannedPayments ?? []).map((p, idx) => {
+                const list = item.plannedPayments ?? [];
+                const update = (patch: Partial<PlannedPayment>) => {
+                  const next = list.map((row, i) => i === idx ? { ...row, ...patch } : row);
+                  onChange("plannedPayments", next);
+                };
+                const remove = () => {
+                  onChange("plannedPayments", list.filter((_, i) => i !== idx));
+                };
+                return (
+                  <div key={idx} className="flex items-center gap-2">
+                    <div className="w-28">
+                      <NumberInput value={p.year} onChange={v => update({ year: v })} placeholder="Year" />
+                    </div>
+                    <span className="text-xs text-muted-foreground">→</span>
+                    <div className="flex-1">
+                      <NumberInput value={p.monthlyPayment} onChange={v => update({ monthlyPayment: v })} placeholder="Total monthly payment (฿)" />
+                    </div>
+                    <button type="button" onClick={remove} className="p-1.5 hover:bg-destructive/10 rounded">
+                      <Trash2 size={13} className="text-destructive" />
+                    </button>
+                  </div>
+                );
+              })}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const list = item.plannedPayments ?? [];
+                  const nextYear = list.length > 0 ? Math.max(...list.map(p => p.year)) + 1 : new Date(item.startDate).getFullYear() + 1;
+                  onChange("plannedPayments", [...list, { year: nextYear, monthlyPayment: item.standardMonthlyPayment + item.extraMonthlyPayment }]);
+                }}
+              >
+                <Plus size={12} /> Add Planned Year
+              </Button>
+            </div>
+          </div>
         </>
       )}
       <div className="flex items-center gap-3 mt-2">
@@ -165,6 +209,7 @@ function MortgageSimulatorPanel({ debts, selectedDebtIds }: { debts: DebtAccount
     refinanceDate: mortgage.refinanceDate,
     refinanceNewRate: mortgage.refinanceNewRate,
     refinanceFee: mortgage.refinanceFee,
+    plannedPayments: mortgage.plannedPayments,
   };
 
   const summary = useMemo(() => summariseMortgage(baseParams), [extraPayment, lumpSum, rateOverride]);
@@ -217,6 +262,24 @@ function MortgageSimulatorPanel({ debts, selectedDebtIds }: { debts: DebtAccount
           </div>
         </CardContent>
       </Card>
+
+      {mortgage.plannedPayments && mortgage.plannedPayments.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Planned Payment Schedule</CardTitle></CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {[...mortgage.plannedPayments].sort((a, b) => a.year - b.year).map((p, i) => (
+                <Badge key={i} variant="outline" className="text-xs">
+                  {p.year}: {thb(p.monthlyPayment)}/mo
+                </Badge>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Each amount replaces the standard + extra payment from that year onward (until the next planned year), and is synced into the Forecast page automatically.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Summary metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

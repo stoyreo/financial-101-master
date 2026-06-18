@@ -11,7 +11,7 @@
  * All formulas are deterministic and fully transparent.
  */
 
-import type { AmortizationRow, MortgageSummary } from "../types";
+import type { AmortizationRow, MortgageSummary, PlannedPayment } from "../types";
 import { calcMonthlyPayment, fmtMonthYear } from "../utils";
 import { parseISO, addMonths, format } from "date-fns";
 
@@ -30,6 +30,23 @@ export interface MortgageParams {
   // Optional rate change (scenario)
   rateChangeDate?: string;
   newRateAfterChange?: number;
+  /** Planned total-monthly-payment step-ups by calendar year. When the
+   *  current row's calendar year is >= an entry's year, that entry's
+   *  monthlyPayment replaces standard+extra for the month (the most recent
+   *  applicable entry wins, and it carries forward until the next one). */
+  plannedPayments?: PlannedPayment[];
+}
+
+/** Find the planned-payment amount that applies for a given calendar year,
+ *  i.e. the entry with the largest year <= calYear. Returns undefined if no
+ *  entry applies yet (calYear is before the earliest planned entry). */
+function activePlannedPayment(plannedPayments: PlannedPayment[] | undefined, calYear: number): number | undefined {
+  if (!plannedPayments || plannedPayments.length === 0) return undefined;
+  let best: PlannedPayment | undefined;
+  for (const p of plannedPayments) {
+    if (p.year <= calYear && (!best || p.year > best.year)) best = p;
+  }
+  return best?.monthlyPayment;
 }
 
 export function buildAmortizationSchedule(params: MortgageParams): AmortizationRow[] {
@@ -45,6 +62,7 @@ export function buildAmortizationSchedule(params: MortgageParams): AmortizationR
     refinanceFee = 0,
     rateChangeDate,
     newRateAfterChange,
+    plannedPayments,
   } = params;
 
   if (openingBalance <= 0) return [];
@@ -93,15 +111,23 @@ export function buildAmortizationSchedule(params: MortgageParams): AmortizationR
       rateChangeDone = true;
     }
 
+    // --- Planned payment override (Y1/Y2/Y3... step-up plan) ---
+    // If the borrower has set a planned total monthly payment for this
+    // calendar year (or an earlier year that still applies), it replaces
+    // the standard + extra payment outright for this month.
+    const plannedOverride = activePlannedPayment(plannedPayments, calYear);
+    const effectivePayment = plannedOverride ?? payment;
+    const effectiveExtraMonthly = plannedOverride !== undefined ? 0 : extraMonthlyPayment;
+
     const interestPaid = balance * monthlyRate;
     // Scheduled principal = payment - interest, but can't exceed balance
-    const scheduledPrincipal = Math.max(0, Math.min(payment - interestPaid, balance));
-    const actualPayment = Math.min(payment, balance + interestPaid);
+    const scheduledPrincipal = Math.max(0, Math.min(effectivePayment - interestPaid, balance));
+    const actualPayment = Math.min(effectivePayment, balance + interestPaid);
 
     // Annual lump sum: applied in month 12, 24, 36... of loan
     const isAnnualPaymentMonth = annualLumpSum > 0 && month % 12 === 0;
     const extra = Math.min(
-      extraMonthlyPayment + (isAnnualPaymentMonth ? annualLumpSum : 0),
+      effectiveExtraMonthly + (isAnnualPaymentMonth ? annualLumpSum : 0),
       Math.max(0, balance - scheduledPrincipal)
     );
 
@@ -139,6 +165,7 @@ export function buildBaselineSchedule(params: MortgageParams): AmortizationRow[]
     ...params,
     extraMonthlyPayment: 0,
     annualLumpSum: 0,
+    plannedPayments: undefined,
   });
 }
 
