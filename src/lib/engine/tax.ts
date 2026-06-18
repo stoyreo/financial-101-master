@@ -215,6 +215,10 @@ export const TH_PARAMS_2026 = {
   rentalExpenseRate: 0.30,
 } as const;
 
+/** Portion of annual base salary (ABS) that is NOT PVD-eligible.
+ *  PVD is contributed on (ABS − this offset). */
+export const PVD_BASE_OFFSET = 240_000;
+
 const EMPLOYMENT_CATEGORIES = new Set(["salary", "bonus", "freelance"]);
 
 /** Annualize an income item, matching the Income page's monthly totals
@@ -257,7 +261,7 @@ export interface IncomeTaxBreakdown {
  */
 export function computeIncomeTaxBreakdown(
   incomes: IncomeItem[],
-  opts: { pvdRate?: number; ssoAnnual?: number; personalAllowance?: number } = {}
+  opts: { pvdRate?: number; ssoAnnual?: number; personalAllowance?: number; pvdBaseOffset?: number } = {}
 ): IncomeTaxBreakdown {
   const p = TH_PARAMS_2026;
   const active = incomes.filter(i => i.isActive);
@@ -290,9 +294,10 @@ export function computeIncomeTaxBreakdown(
   const ssoDeduction =
     opts.ssoAnnual ?? Math.min(monthlySalary * p.ssoEmployeeRate, p.ssoMonthlyEmployeeMax) * 12;
 
-  // PVD: rate × salary, within the ฿500,000 combined retirement cap.
+  // PVD: rate × (salary − non-eligible offset), within the ฿500,000 combined cap.
   const pvdRate = Math.min(Math.max(opts.pvdRate ?? 0, 0), p.pvdMaxRate);
-  const pvdDeduction = Math.min(salaryIncome * pvdRate, p.retirementCombinedCap);
+  const pvdBase = Math.max(0, salaryIncome - (opts.pvdBaseOffset ?? 0));
+  const pvdDeduction = Math.min(pvdBase * pvdRate, p.retirementCombinedCap);
 
   const personalAllowance = opts.personalAllowance ?? p.personalAllowance;
   const totalDirectDeductions = ssoDeduction + pvdDeduction + personalAllowance;

@@ -275,7 +275,7 @@ export default function ForecastPage() {
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b border-border bg-muted/50">
-                    {["Year","Age","Income","Expenses","Debt Pmts","Net CF","Mortgage Bal","Investments","Net Worth","DTI","DSR","Flags"].map(h => (
+                    {["Year","Age","Net Income","Expenses","Debt Pmts","Net CF","Mortgage Bal","Investments","Net Worth","DTI","DSR","Flags"].map(h => (
                       <th key={h} className="text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap first:text-left">{h}</th>
                     ))}
                   </tr>
@@ -310,7 +310,7 @@ export default function ForecastPage() {
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-background">
                   <tr className="border-b border-border bg-muted/50">
-                    {["Month","Income","Expenses","Debt Pmts","Net CF","Mortgage Bal","Total Debt","Investments"].map(h => (
+                    {["Month","Net Income","Expenses","Debt Pmts","Net CF","Mortgage Bal","Total Debt","Investments"].map(h => (
                       <th key={h} className="text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap first:text-left">{h}</th>
                     ))}
                   </tr>

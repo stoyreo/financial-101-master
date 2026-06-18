@@ -2,7 +2,7 @@
 import { useState, useRef } from "react";
 import { useStore, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
-import { computeIncomeTaxBreakdown, TH_PARAMS_2026 } from "@/lib/engine/tax";
+import { computeIncomeTaxBreakdown, TH_PARAMS_2026, PVD_BASE_OFFSET } from "@/lib/engine/tax";
 import type { IncomeItem, IncomeCategory, Frequency } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
@@ -113,7 +113,7 @@ export default function IncomePage() {
 
   // Thai-scheme taxable portion: applies Section-40 expense deductions and
   // deducts SSO + PVD + personal allowance directly in this section.
-  const taxBreakdown = computeIncomeTaxBreakdown(incomes, { pvdRate: pvdRate / 100 });
+  const taxBreakdown = computeIncomeTaxBreakdown(incomes, { pvdRate: pvdRate / 100, pvdBaseOffset: PVD_BASE_OFFSET });
 
   const openAdd = () => { setFormData(defaultItem()); setEditId(null); setModalOpen(true); };
   const openEdit = (item: IncomeItem) => {
@@ -283,7 +283,7 @@ export default function IncomePage() {
             <Row label="− Employment expense deduction (50%, max ฿100K)" value={`−${thb(taxBreakdown.employmentExpenseDeduction)}`} muted />
             <Row label="− Rental expense deduction (30%)" value={`−${thb(taxBreakdown.rentalExpenseDeduction)}`} muted />
             <Row label="− SSO contribution (capped ฿875/mo)" value={`−${thb(taxBreakdown.ssoDeduction)}`} muted />
-            <Row label={`− Provident fund (${pvdRate}% of salary)`} value={`−${thb(taxBreakdown.pvdDeduction)}`} muted />
+            <Row label={`− Provident fund (${pvdRate}% of ABS − ฿240K)`} value={`−${thb(taxBreakdown.pvdDeduction)}`} muted />
             <Row label="− Personal allowance" value={`−${thb(taxBreakdown.personalAllowance)}`} muted />
             <div className="hidden lg:block" />
           </div>

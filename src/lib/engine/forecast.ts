@@ -21,7 +21,38 @@ import type {
 } from "../types";
 import { calcAge, toYearly, toMonthly, applyGrowth, safeDivide } from "../utils";
 import { buildAmortizationSchedule } from "./mortgage";
+import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "./tax";
 import { parseISO, format, addMonths } from "date-fns";
+
+/** Employee provident-fund rate (% of salary) used for take-home cash flow.
+ *  Matches the Income page default; PVD is withheld from pay into the fund,
+ *  so it does not arrive in the bank account. */
+const PVD_RATE = 0.10;
+
+/** Build a growth-adjusted copy of the income list for a given year, so the
+ *  Thai tax engine can estimate statutory outflow (PIT + SSO + PVD) on the
+ *  income actually earned that year. Mirrors computeAnnualIncome's growth/shock. */
+function scaleIncomesForYear(incomes: IncomeItem[], year: number, sa: Scenario["assumptions"]): IncomeItem[] {
+  return incomes.map(inc => {
+    if (!isItemActiveInYear(inc, year)) return { ...inc, isActive: false };
+    const startY = parseInt(inc.startDate.split("-")[0], 10) || year;
+    const yearsElapsed = Math.max(0, year - startY);
+    const growthRate = sa.incomeGrowthRate ?? inc.annualGrowthRate;
+    let amount = applyGrowth(inc.amount, growthRate, yearsElapsed);
+    if (sa.incomeShockYear && year >= sa.incomeShockYear &&
+        year < (sa.incomeShockYear + Math.ceil((sa.incomeShockDuration ?? 12) / 12))) {
+      amount *= (sa.incomeShockFactor ?? 1);
+    }
+    return { ...inc, amount };
+  });
+}
+
+/** Annual statutory outflow that never reaches the bank: income tax + SSO + PVD. */
+function statutoryOutflowForYear(incomes: IncomeItem[], year: number, sa: Scenario["assumptions"]): number {
+  const scaled = scaleIncomesForYear(incomes, year, sa);
+  const b = computeIncomeTaxBreakdown(scaled, { pvdRate: PVD_RATE, pvdBaseOffset: PVD_BASE_OFFSET });
+  return b.estimatedTax + b.ssoDeduction + b.pvdDeduction;
+}
 
 interface ForecastInput {
   profile: Profile;
@@ -168,11 +199,16 @@ export function generateYearlyForecast(input: ForecastInput): YearlyForecastRow[
     const age = year - birthYear;
     const isRetired = year >= retirementYear;
 
-    // ── Income ──────────────────────────────────────────
-    let totalIncome = isRetired ? 0 : computeAnnualIncome(incomes, year, sa);
-    // Pension/SSO in retirement
+    // ── Income (net take-home — cash actually reaching the bank) ──
+    // Gross employment income minus statutory outflow (Thai PIT + SSO + PVD).
+    let totalIncome = 0;
     if (isRetired) {
-      totalIncome += (retirement.pensionMonthlyAmount + retirement.ssoMonthlyBenefit) * 12;
+      // Pension/SSO benefits in retirement (already net of payroll deductions).
+      totalIncome = (retirement.pensionMonthlyAmount + retirement.ssoMonthlyBenefit) * 12;
+    } else {
+      const grossIncome = computeAnnualIncome(incomes, year, sa);
+      const statutoryOutflow = statutoryOutflowForYear(incomes, year, sa);
+      totalIncome = Math.max(0, grossIncome - statutoryOutflow);
     }
 
     // ── Expenses ─────────────────────────────────────────
@@ -279,19 +315,34 @@ export function generateMonthlyForecast(input: ForecastInput): MonthlyForecastRo
 
   let investmentBalance = investments.filter(i => i.isActive).reduce((s, i) => s + i.marketValue, 0);
 
+  // Cache annual statutory outflow (PIT + SSO + PVD) per calendar year so the
+  // take-home figure is consistent month to month and we don't recompute 60×.
+  const monthlyOutflowByYear: Record<number, number> = {};
+
   for (let m = 0; m < 60; m++) {
     const dt = addMonths(today, m);
     const year = dt.getFullYear();
     const month = dt.getMonth() + 1;
     const yearFraction = year - parseInt(profile.planningStartDate.split("-")[0], 10);
 
-    // Monthly income
-    let totalIncome = 0;
+    // Monthly gross income
+    let grossMonthly = 0;
     for (const inc of incomes) {
       if (!inc.isActive) continue;
       const growth = sa.incomeGrowthRate ?? inc.annualGrowthRate;
-      totalIncome += toMonthly(applyGrowth(inc.amount, growth, yearFraction), inc.frequency);
+      grossMonthly += toMonthly(applyGrowth(inc.amount, growth, yearFraction), inc.frequency);
     }
+
+    // Statutory outflow → net take-home (cash into the bank)
+    if (monthlyOutflowByYear[year] === undefined) {
+      const scaled = incomes.map(inc => ({
+        ...inc,
+        amount: applyGrowth(inc.amount, sa.incomeGrowthRate ?? inc.annualGrowthRate, yearFraction),
+      }));
+      const b = computeIncomeTaxBreakdown(scaled, { pvdRate: PVD_RATE, pvdBaseOffset: PVD_BASE_OFFSET });
+      monthlyOutflowByYear[year] = (b.estimatedTax + b.ssoDeduction + b.pvdDeduction) / 12;
+    }
+    const totalIncome = Math.max(0, grossMonthly - monthlyOutflowByYear[year]);
 
     // Monthly expenses
     let totalExpenses = 0;
