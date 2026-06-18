@@ -115,6 +115,38 @@ export function budgetVsActual(
   return rows.sort((a, b) => b.actual - a.actual);
 }
 
+export interface BudgetGap {
+  category: string;
+  budget: number;          // current monthly budget for the category
+  actual: number;          // actual monthly spend
+  gap: number;             // actual − budget (always > 0 here)
+  unbudgeted: boolean;     // true when no budget line exists yet
+  suggestedBudget: number; // rounded-up actual, a starting budget to set
+  isEssential: boolean;
+}
+
+/**
+ * Smart Analyzer: the most expensive categories where actual spend exceeds the
+ * budget — i.e. the biggest gaps worth filling in. Unbudgeted categories
+ * (budget = 0) surface here too, since their entire actual is an open gap.
+ * Ranked by absolute gap (THB), largest first.
+ */
+export function topBudgetGaps(rows: BudgetVsActualRow[], limit = 6): BudgetGap[] {
+  return rows
+    .filter(r => r.gap > 0 && r.actual > 0)
+    .sort((a, b) => b.gap - a.gap)
+    .slice(0, limit)
+    .map(r => ({
+      category: r.category,
+      budget: r.budget,
+      actual: r.actual,
+      gap: r.gap,
+      unbudgeted: r.budget <= 0,
+      suggestedBudget: Math.max(100, Math.ceil(r.actual / 100) * 100),
+      isEssential: r.isEssential,
+    }));
+}
+
 export interface MonthlyTrendPoint {
   ym: string;
   label: string;

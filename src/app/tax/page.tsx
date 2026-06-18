@@ -2,19 +2,45 @@
 import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { thb, pct } from "@/lib/utils";
-import { computeTax, compareTaxVsDebt } from "@/lib/engine/tax";
+import { computeTax, compareTaxVsDebt, PVD_BASE_OFFSET } from "@/lib/engine/tax";
 import type { TaxAssumptions } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
   StatCard, PageHeader, Alert, Progress, Separator, Badge, InfoTooltip
 } from "@/components/ui";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { Calculator, Save, TrendingDown, CheckCircle } from "lucide-react";
+import { Calculator, Save, TrendingDown, CheckCircle, Download } from "lucide-react";
+
+const PVD_RATE = 0.10; // employee provident-fund rate, matches Income page
 
 export default function TaxPage() {
-  const { tax, setTax, debts } = useStore();
+  const { tax, setTax, debts, incomes } = useStore();
   const [form, setForm] = useState<TaxAssumptions>({ ...tax });
   const [saved, setSaved] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+
+  // Pull gross income, bonus, PVD and employment deduction from the Income menu.
+  const prefillFromIncome = () => {
+    const annual = (i: typeof incomes[number]) =>
+      i.frequency === "yearly" ? i.amount : i.frequency === "monthly" ? i.amount * 12 : 0;
+    const active = incomes.filter(i => i.isActive && i.isTaxable);
+    const salaryOnly = active.filter(i => i.category === "salary").reduce((s, i) => s + annual(i), 0);
+    const employment = active
+      .filter(i => i.category === "salary" || i.category === "freelance")
+      .reduce((s, i) => s + annual(i), 0);
+    const bonus = active.filter(i => i.category === "bonus").reduce((s, i) => s + annual(i), 0);
+    const pvd = Math.min(Math.max(0, salaryOnly - PVD_BASE_OFFSET) * PVD_RATE, 500_000);
+
+    setForm(f => ({
+      ...f,
+      annualGrossIncome: Math.round(employment),
+      annualBonus: Math.round(bonus),
+      pvdContribution: Math.round(pvd),
+      employmentIncomeDeduction: Math.min((employment + bonus) * 0.5, 100_000),
+    }));
+    setPrefilled(true);
+    setTimeout(() => setPrefilled(false), 3000);
+  };
 
   const result = computeTax(form);
   const mortgage = debts.find(d => d.debtType === "mortgage" && d.isActive);
@@ -50,12 +76,18 @@ export default function TaxPage() {
         title="Tax Planning"
         subtitle="Thailand PIT estimation and deduction optimisation"
         actions={
-          <Button size="sm" onClick={handleSave}>
-            <Save size={14} /> Save Assumptions
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={prefillFromIncome}>
+              <Download size={14} /> Prefill from Income
+            </Button>
+            <Button size="sm" onClick={handleSave}>
+              <Save size={14} /> Save Assumptions
+            </Button>
+          </div>
         }
       />
 
+      {prefilled && <Alert variant="success" className="mb-4"><CheckCircle size={14} className="inline mr-2" />Prefilled gross income, bonus, PVD and employment deduction from your Income menu. Review and click Save Assumptions to keep.</Alert>}
       {saved && <Alert variant="success" className="mb-4"><CheckCircle size={14} className="inline mr-2" />Tax assumptions saved.</Alert>}
 
       {/* Tax summary */}

@@ -1,16 +1,21 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { useStore, selectTotalMonthlyExpenses } from "@/lib/store";
+import { useStore, selectTotalMonthlyExpenses, selectTotalMonthlyIncome } from "@/lib/store";
 import { thb, toMonthly, pct } from "@/lib/utils";
+import { computeIncomeTaxBreakdown, PVD_BASE_OFFSET } from "@/lib/engine/tax";
+import { budgetVsActual, topBudgetGaps, totalActuals, listMonths, ymLabel } from "@/lib/actuals";
+import { getCurrentAccount } from "@/lib/accounts";
 import type { ExpenseItem, Frequency } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Switch, Textarea, Modal, Badge, StatCard, PageHeader, EmptyState, Progress,
   InfoTooltip, AITokenMeter
 } from "@/components/ui";
-import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X } from "lucide-react";
+import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X, Gauge, AlertTriangle, ArrowRight, PlusCircle } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+
+const PVD_RATE = 0.10;
 
 export const dynamic = "force-dynamic";
 
@@ -185,6 +190,38 @@ export default function ExpensesPage() {
     .reduce((s, e) => s + toMonthly(e.amount, e.frequency), 0);
   const discretionaryMonthly = totalMonthly - essentialMonthly;
 
+  // ── Smart Analyzer: Income vs Actual Expense + top budget gaps ──
+  const account = getCurrentAccount();
+  const activeAccountId = account?.id;
+  const transactions = store.transactions.filter(
+    t => t.accountId === activeAccountId || !t.accountId
+  );
+  const months = listMonths(transactions);
+  const latestMonth = months[months.length - 1];
+  const netMonthlyIncome = (() => {
+    const b = computeIncomeTaxBreakdown(store.incomes, { pvdRate: PVD_RATE, pvdBaseOffset: PVD_BASE_OFFSET });
+    return (b.grossAnnualIncome - b.estimatedTax - b.ssoDeduction - b.pvdDeduction) / 12;
+  })();
+  const actualSpend = latestMonth ? totalActuals(transactions, latestMonth) : 0;
+  const bvaRows = latestMonth ? budgetVsActual(expenses, transactions, latestMonth) : [];
+  const gaps = topBudgetGaps(bvaRows);
+  const totalGap = gaps.reduce((s, g) => s + g.gap, 0);
+  const surplus = netMonthlyIncome - actualSpend;
+  const savingsRate = netMonthlyIncome > 0 ? surplus / netMonthlyIncome : 0;
+
+  const addGapToBudget = (category: string, monthlyAmount: number) => {
+    setFormData({
+      ...defaultExpense(),
+      name: `${category} (from actuals)`,
+      category,
+      amount: Math.round(monthlyAmount),
+      frequency: "monthly",
+      isEssential: false,
+    });
+    setEditId(null);
+    setModalOpen(true);
+  };
+
   const openAdd = () => { setFormData(defaultExpense()); setEditId(null); setModalOpen(true); };
   const openEdit = (item: ExpenseItem) => { setFormData({ ...item }); setEditId(item.id); setModalOpen(true); };
   const handleSave = () => {
@@ -268,6 +305,99 @@ export default function ExpensesPage() {
           tooltip="Count of expense items where isActive = true."
         />
       </div>
+
+      {/* Smart Analyzer */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Gauge size={15} /> Smart Analyzer — Income vs Actual Expense
+            </CardTitle>
+            {latestMonth && (
+              <Badge variant="outline">Latest actuals: {ymLabel(latestMonth)}</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!latestMonth ? (
+            <div className="flex items-center justify-between gap-4 p-4 rounded-lg bg-muted/40">
+              <div className="text-sm text-muted-foreground">
+                No actual spending imported yet. Import a statement to compare real spend against your budget and surface gaps.
+              </div>
+              <Link href="/expenses/actuals">
+                <Button size="sm" variant="outline"><Upload size={14} /> Import Statement</Button>
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20">
+                  <div className="text-xs text-emerald-700 dark:text-emerald-300">Net Income (take-home)</div>
+                  <div className="text-lg font-bold tabular-nums text-emerald-800 dark:text-emerald-200">{thb(netMonthlyIncome)}</div>
+                  <div className="text-[11px] text-muted-foreground">per month</div>
+                </div>
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20">
+                  <div className="text-xs text-red-700 dark:text-red-300">Actual Spend</div>
+                  <div className="text-lg font-bold tabular-nums text-red-800 dark:text-red-200">{thb(actualSpend)}</div>
+                  <div className="text-[11px] text-muted-foreground">{ymLabel(latestMonth)}</div>
+                </div>
+                <div className={`p-3 rounded-lg ${surplus >= 0 ? "bg-blue-50 dark:bg-blue-900/20" : "bg-amber-50 dark:bg-amber-900/20"}`}>
+                  <div className="text-xs text-muted-foreground">{surplus >= 0 ? "Surplus" : "Deficit"}</div>
+                  <div className={`text-lg font-bold tabular-nums ${surplus >= 0 ? "text-blue-700 dark:text-blue-300" : "text-amber-700 dark:text-amber-300"}`}>{thb(surplus)}</div>
+                  <div className="text-[11px] text-muted-foreground">income − actual</div>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground">Savings Rate</div>
+                  <div className="text-lg font-bold tabular-nums">{pct(savingsRate)}</div>
+                  <div className="text-[11px] text-muted-foreground">of net income</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium flex items-center gap-1.5">
+                  <AlertTriangle size={14} className="text-amber-500" />
+                  Top expensive gaps to consider budgeting
+                </div>
+                {totalGap > 0 && <span className="text-xs text-muted-foreground">Unbudgeted/over by {thb(totalGap)}/mo</span>}
+              </div>
+
+              {gaps.length === 0 ? (
+                <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-sm text-emerald-800 dark:text-emerald-200">
+                  No gaps — every category with actual spend is within its budget. Nice.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {gaps.map(g => (
+                    <div key={g.category} className="flex items-center gap-3 p-3 rounded-lg border border-border hover:bg-muted/30 transition-colors">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{g.category}</span>
+                          <Badge variant={g.unbudgeted ? "warning" : "outline"}>
+                            {g.unbudgeted ? "No budget" : "Over budget"}
+                          </Badge>
+                          {!g.isEssential && <Badge variant="outline">Discretionary</Badge>}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5 tabular-nums">
+                          Actual {thb(g.actual)}/mo
+                          <ArrowRight size={10} className="inline mx-1" />
+                          Budget {thb(g.budget)}/mo
+                          <span className="text-amber-600 dark:text-amber-400 font-medium ml-2">gap {thb(g.gap)}</span>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => addGapToBudget(g.category, g.suggestedBudget)}>
+                        <PlusCircle size={14} /> Budget {thb(g.suggestedBudget)}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-3">
+                Gaps rank categories where actual spend exceeds the budget (or has none). “Budget” pre-fills a new line at the rounded actual — review and save to bring it into your plan.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         {/* Category chart */}
