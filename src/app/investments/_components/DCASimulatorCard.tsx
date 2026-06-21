@@ -114,7 +114,15 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
   // hardcoded SCB-fund options.
   const funds = useMemo(() => getAllFunds(userIdProp || ""), [userIdProp]);
   const [fundChoice, setFundChoice] = useState<string>(() => funds[0]?.code ?? "custom");
-  const [monthlyAmount, setMonthlyAmount] = useState(5000);
+  // Monthly DCA is tracked per fund choice — switching the dropdown should
+  // show that fund's own remembered amount, not carry over (or accumulate
+  // with) whatever was typed for a previously-selected fund.
+  const DEFAULT_MONTHLY_AMOUNT = 5000;
+  const [monthlyAmountByFund, setMonthlyAmountByFund] = useState<Record<string, number>>({});
+  const monthlyAmount = monthlyAmountByFund[fundChoice] ?? DEFAULT_MONTHLY_AMOUNT;
+  const setMonthlyAmount = (v: number) => {
+    setMonthlyAmountByFund(prev => ({ ...prev, [fundChoice]: v }));
+  };
   const [years, setYears] = useState(15);
   const [customRate, setCustomRate] = useState(7); // % — used when fundChoice === "custom" or "ai:*"
   const [taxBracket, setTaxBracket] = useState(0.10);
@@ -313,7 +321,7 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
 
   const handleLoad = (s: DCAScenario) => {
     setFundChoice(s.fundChoice);
-    setMonthlyAmount(s.monthlyAmount);
+    setMonthlyAmountByFund(prev => ({ ...prev, [s.fundChoice]: s.monthlyAmount }));
     setYears(s.years);
     setCustomRate(s.customRatePct);
     setTaxBracket(s.taxBracket);
