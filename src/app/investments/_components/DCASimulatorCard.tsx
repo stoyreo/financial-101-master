@@ -1,18 +1,36 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { Calculator, TrendingUp, Info } from "lucide-react";
 import {
-  Card, CardHeader, CardTitle, CardContent, NumberInput, Select, Label, Badge,
+  Calculator, TrendingUp, Info, Save, Trash2, Sparkles, Loader2, AlertTriangle, FolderOpen,
+} from "lucide-react";
+import {
+  Card, CardHeader, CardTitle, CardContent, NumberInput, Select, Label, Badge, Button, Input,
+  InfoTooltip,
 } from "@/components/ui";
 import { cn, pct, thb } from "@/lib/utils";
 import { PVDMPFEQ, SCBGOLDHRMF, geometricMean } from "@/lib/fund-registry";
+import { computeIncomeTaxBreakdown, getMarginalRate, getBracketLabel } from "@/lib/engine/tax";
+import { useStore } from "@/lib/store";
+import { getSession } from "@/lib/auth-client";
+import { TokenUsageStamp } from "./TokenUsageStamp";
+import {
+  type DCAScenario, loadDCAScenarios, addDCAScenario, removeDCAScenario,
+} from "./dca-scenarios";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type FundChoice = "PVDMPFEQ" | "SCBGOLDHRMF" | "custom";
+type AIFund = {
+  rank: number;
+  code: string;
+  name: string;
+  manager: string;
+  yoyReturnPct: number;
+  riskLevel: number;
+  note: string;
+};
 
 interface Props {
   /** AI best-estimate return for PVDMPFEQ, if a forecast has been generated */
@@ -47,30 +65,120 @@ function estimateAnnualTaxRelief(annualContribution: number, marginalRate: numbe
   return deductible * marginalRate;
 }
 
+// Custom X-axis tick: shows the calendar year on one line and the profile
+// owner's projected age on the line below, so the timeline reads in both
+// "when" and "how old will I be" terms.
+function YearAgeTick({ x, y, payload, birthYear }: any) {
+  const year = payload.value as number;
+  const age = birthYear ? year - birthYear : null;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={10} textAnchor="middle" fontSize={10} fill="currentColor" className="fill-muted-foreground">
+        {year}
+      </text>
+      {age !== null && (
+        <text x={0} y={0} dy={22} textAnchor="middle" fontSize={9} fill="currentColor" className="fill-muted-foreground/70">
+          {`(${age}y)`}
+        </text>
+      )}
+    </g>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
-  const [fundChoice, setFundChoice] = useState<FundChoice>("PVDMPFEQ");
+  const { incomes, profile } = useStore();
+
+  const [fundChoice, setFundChoice] = useState<string>("PVDMPFEQ");
   const [monthlyAmount, setMonthlyAmount] = useState(5000);
   const [years, setYears] = useState(15);
-  const [customRate, setCustomRate] = useState(7); // % — only used when fundChoice === "custom"
+  const [customRate, setCustomRate] = useState(7); // % — used when fundChoice === "custom" or "ai:*"
   const [taxBracket, setTaxBracket] = useState(0.10);
+  const [usedSuggestedBracket, setUsedSuggestedBracket] = useState(false);
+
+  // ── AI-researched top RMF funds (on-demand, web-grounded) ───────────────────
+  const [aiFunds, setAiFunds] = useState<AIFund[] | null>(null);
+  const [aiFundsStatus, setAiFundsStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [aiFundsError, setAiFundsError] = useState<string | null>(null);
+  const [aiFundsAsOf, setAiFundsAsOf] = useState<string | null>(null);
+  const [aiFundsSources, setAiFundsSources] = useState<{ title: string; url: string }[]>([]);
+  const [aiFundsUsage, setAiFundsUsage] = useState<{ inputTokens: number | null; outputTokens: number | null } | null>(null);
+
+  const fetchTopRMFFunds = async () => {
+    setAiFundsStatus("loading");
+    setAiFundsError(null);
+    try {
+      const res = await fetch("/api/investments/rmf-top-funds", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setAiFundsError(data.message ?? "Could not fetch fund rankings. Please try again.");
+        setAiFundsStatus("error");
+        return;
+      }
+      setAiFunds(data.funds ?? []);
+      setAiFundsAsOf(data.asOf ?? null);
+      setAiFundsSources(data.sources ?? []);
+      setAiFundsUsage(data.usage ?? null);
+      setAiFundsStatus("done");
+    } catch {
+      setAiFundsError("Network error. Check your connection and try again.");
+      setAiFundsStatus("error");
+    }
+  };
+
+  // ── Saved scenarios (sessionStorage, per-user) ───────────────────────────────
+  const userId = getSession()?.userId;
+  const [savedScenarios, setSavedScenarios] = useState<DCAScenario[]>([]);
+  const [scenarioName, setScenarioName] = useState("");
+
+  useEffect(() => {
+    if (userId) setSavedScenarios(loadDCAScenarios(userId));
+  }, [userId]);
+
+  // ── Return basis ──────────────────────────────────────────────────────────
+  const selectedAIFund = fundChoice.startsWith("ai:")
+    ? aiFunds?.find(f => f.code === fundChoice.slice(3))
+    : undefined;
 
   const fundReturn = useMemo(() => {
-    if (fundChoice === "PVDMPFEQ") {
-      return aiPVDReturn ?? geometricMean(PVDMPFEQ) / 100;
-    }
-    if (fundChoice === "SCBGOLDHRMF") {
-      return aiSCBGoldReturn ?? geometricMean(SCBGOLDHRMF) / 100;
-    }
+    if (fundChoice === "PVDMPFEQ") return aiPVDReturn ?? geometricMean(PVDMPFEQ) / 100;
+    if (fundChoice === "SCBGOLDHRMF") return aiSCBGoldReturn ?? geometricMean(SCBGOLDHRMF) / 100;
+    if (selectedAIFund) return selectedAIFund.yoyReturnPct / 100;
     return customRate / 100;
-  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn, customRate]);
+  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn, customRate, selectedAIFund]);
 
   const returnSource = useMemo(() => {
     if (fundChoice === "PVDMPFEQ") return aiPVDReturn !== undefined ? "ai" : "historical";
     if (fundChoice === "SCBGOLDHRMF") return aiSCBGoldReturn !== undefined ? "ai" : "historical";
+    if (selectedAIFund) return "ai-research";
     return "manual";
-  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn]);
+  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn, selectedAIFund]);
+
+  // ── Auto-suggested tax bracket ───────────────────────────────────────────────
+  // Explainable rule-based suggestion (not an LLM call): derives the user's
+  // marginal Thai PIT rate straight from their Income page entries, using the
+  // same progressive-bracket math as the Tax page. Shown only if they have
+  // active taxable income on record.
+  const incomeTaxBreakdown = useMemo(() => computeIncomeTaxBreakdown(incomes), [incomes]);
+  const hasIncomeData = incomeTaxBreakdown.grossAnnualIncome > 0;
+  const suggestedRate = useMemo(
+    () => getMarginalRate(incomeTaxBreakdown.netTaxableIncome),
+    [incomeTaxBreakdown.netTaxableIncome],
+  );
+  const suggestedBracketLabel = useMemo(
+    () => getBracketLabel(incomeTaxBreakdown.netTaxableIncome),
+    [incomeTaxBreakdown.netTaxableIncome],
+  );
+
+  // Apply the suggestion once, the first time it becomes available, without
+  // fighting the user if they've already picked a bracket manually.
+  useEffect(() => {
+    if (hasIncomeData && !usedSuggestedBracket) {
+      setTaxBracket(suggestedRate);
+      setUsedSuggestedBracket(true);
+    }
+  }, [hasIncomeData, suggestedRate, usedSuggestedBracket]);
 
   const months = Math.max(1, Math.round(years * 12));
   const totalInvested = monthlyAmount * months;
@@ -86,19 +194,63 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   const combinedBenefit = totalGrowth + totalTaxRelief;
   const combinedRoiPct = totalInvested > 0 ? combinedBenefit / totalInvested : 0;
 
-  // Year-by-year chart data
+  // Year-by-year chart data, including cumulative tax relief as its own series.
+  const birthYear = profile?.dateOfBirth ? new Date(profile.dateOfBirth).getFullYear() : null;
   const chartData = useMemo(() => {
     return Array.from({ length: years + 1 }, (_, yr) => {
       const m = yr * 12;
       const invested = monthlyAmount * m;
       const value = fvOfMonthlyDCA(monthlyAmount, fundReturn, m);
+      const taxRelief = annualTaxRelief * yr;
       return {
         year: new Date().getFullYear() + yr,
         invested: Math.round(invested),
         value: Math.round(value),
+        taxRelief: Math.round(taxRelief),
       };
     });
-  }, [years, monthlyAmount, fundReturn]);
+  }, [years, monthlyAmount, fundReturn, annualTaxRelief]);
+
+  // ── Save / load / remove scenarios ───────────────────────────────────────────
+  const fundLabel = fundChoice === "PVDMPFEQ"
+    ? "PVDMPFEQ"
+    : fundChoice === "SCBGOLDHRMF"
+    ? "SCBGOLDHRMF"
+    : selectedAIFund
+    ? `${selectedAIFund.code} (AI-suggested)`
+    : `Custom (${pct(customRate / 100)})`;
+
+  const handleSave = () => {
+    if (!userId) return;
+    const name = scenarioName.trim() || `${fundLabel} · ฿${monthlyAmount.toLocaleString()}/mo · ${years}y`;
+    const scenario: DCAScenario = {
+      id: `${Date.now()}`,
+      name,
+      fundChoice,
+      fundLabel,
+      monthlyAmount,
+      years,
+      customRatePct: customRate,
+      taxBracket,
+      results: { totalInvested, futureValue, roiPct, totalTaxRelief, combinedRoiPct },
+      createdAt: new Date().toISOString(),
+    };
+    setSavedScenarios(addDCAScenario(userId, scenario));
+    setScenarioName("");
+  };
+
+  const handleRemove = (id: string) => {
+    if (!userId) return;
+    setSavedScenarios(removeDCAScenario(userId, id));
+  };
+
+  const handleLoad = (s: DCAScenario) => {
+    setFundChoice(s.fundChoice);
+    setMonthlyAmount(s.monthlyAmount);
+    setYears(s.years);
+    setCustomRate(s.customRatePct);
+    setTaxBracket(s.taxBracket);
+  };
 
   return (
     <Card className="mb-6 border-blue-200 dark:border-blue-800">
@@ -117,31 +269,87 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
       </CardHeader>
 
       <CardContent className="space-y-4 pt-0">
+        {/* ── AI: top RMF funds by YoY return ────────────────────────────────── */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={fetchTopRMFFunds} disabled={aiFundsStatus === "loading"}>
+            {aiFundsStatus === "loading" ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+            {aiFunds ? "Refresh top 5 RMF (AI)" : "Find top 5 RMF with tax relief (AI)"}
+          </Button>
+          <InfoTooltip content="Asks Claude to web-search current Thai RMF funds (tax-relief eligible) and rank the top 5 by year-over-year return. Capped at 3 searches per click — nothing runs automatically." />
+          {aiFundsAsOf && (
+            <span className="text-xs text-muted-foreground">Ranked as of {aiFundsAsOf}</span>
+          )}
+        </div>
+
+        {aiFundsStatus === "error" && aiFundsError && (
+          <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-lg p-3">
+            <AlertTriangle size={14} className="shrink-0" />
+            <span>{aiFundsError}</span>
+          </div>
+        )}
+
         {/* ── Inputs ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
-            <Label>Fund / Return Basis</Label>
-            <Select value={fundChoice} onChange={e => setFundChoice(e.target.value as FundChoice)} className="mt-1">
+            <div className="flex items-center mb-1">
+              <Label className="mb-0">Fund / Return Basis</Label>
+              <InfoTooltip content="Which fund's historical or AI-forecast return drives the projection. 'Custom rate' lets you type any assumed annual return. AI-suggested funds appear here after you run the research above." />
+            </div>
+            <Select value={fundChoice} onChange={e => setFundChoice(e.target.value)} className="mt-1">
               <option value="PVDMPFEQ">PVDMPFEQ (Thai equity)</option>
               <option value="SCBGOLDHRMF">SCBGOLDHRMF (Gold)</option>
+              {aiFunds && aiFunds.length > 0 && (
+                <optgroup label="AI-suggested top RMF (YoY)">
+                  {aiFunds.map(f => (
+                    <option key={f.code} value={`ai:${f.code}`}>
+                      {f.rank}. {f.code} — {pct(f.yoyReturnPct / 100)} YoY
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               <option value="custom">Custom rate</option>
             </Select>
           </div>
           <div>
-            <Label>Monthly DCA (฿)</Label>
+            <div className="flex items-center mb-1">
+              <Label className="mb-0">Monthly DCA (฿)</Label>
+              <InfoTooltip content="Dollar-cost averaging: a fixed THB amount invested every month, regardless of the fund's price that month. Smooths out entry price over time." />
+            </div>
             <NumberInput value={monthlyAmount} onChange={setMonthlyAmount} min={0} step={500} className="mt-1" />
           </div>
           <div>
-            <Label>Years</Label>
+            <div className="flex items-center mb-1">
+              <Label className="mb-0">Years</Label>
+              <InfoTooltip content="Investment horizon — how many years you keep contributing and stay invested before withdrawing." />
+            </div>
             <NumberInput value={years} onChange={v => setYears(Math.max(1, Math.min(50, v)))} min={1} max={50} step={1} className="mt-1" />
           </div>
           <div>
-            <Label>Your Tax Bracket</Label>
+            <div className="flex items-center mb-1">
+              <Label className="mb-0">Your Tax Bracket</Label>
+              <InfoTooltip content={
+                "Your marginal Thai personal income tax rate — the rate charged on your NEXT baht of taxable income, " +
+                "which is exactly the rate an RMF tax deduction saves you. Thai brackets run from 0% (≤฿150,000 taxable) " +
+                "up to 35% (above ฿5,000,000 taxable). " +
+                (hasIncomeData
+                  ? `Auto-suggested as ${pct(suggestedRate)} from your Income page (net taxable income ${thb(incomeTaxBreakdown.netTaxableIncome)}/yr falls in the ${suggestedBracketLabel} bracket). Excludes PVD deduction for simplicity — adjust if needed.`
+                  : "Add active income entries on the Income page to get this auto-suggested.")
+              } />
+            </div>
             <Select value={String(taxBracket)} onChange={e => setTaxBracket(parseFloat(e.target.value))} className="mt-1">
               {TAX_BRACKETS.map(b => (
                 <option key={b} value={b}>{(b * 100).toFixed(0)}%</option>
               ))}
             </Select>
+            {hasIncomeData && Math.abs(taxBracket - suggestedRate) > 0.001 && (
+              <button
+                type="button"
+                onClick={() => setTaxBracket(suggestedRate)}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+              >
+                Use suggested ({pct(suggestedRate)})
+              </button>
+            )}
           </div>
         </div>
 
@@ -152,12 +360,23 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
           </div>
         )}
 
+        {selectedAIFund && (
+          <div className="flex items-start gap-2 text-xs bg-violet-50 dark:bg-violet-900/10 rounded-lg p-3 text-violet-800 dark:text-violet-300">
+            <Sparkles size={13} className="shrink-0 mt-0.5" />
+            <span>
+              {selectedAIFund.name} — {selectedAIFund.manager}. {selectedAIFund.note}
+              {selectedAIFund.riskLevel > 0 && ` Risk level ${selectedAIFund.riskLevel}/8.`}
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <Info size={12} className="shrink-0" />
           <span>
             Return basis: {pct(fundReturn)}/yr{" "}
             {returnSource === "ai" && "(from AI forecast above)"}
             {returnSource === "historical" && "(11-yr historical CAGR — generate the AI forecast above for an updated estimate)"}
+            {returnSource === "ai-research" && "(AI-researched YoY return — see sources below)"}
             {returnSource === "manual" && "(manually entered)"}
           </span>
         </div>
@@ -207,17 +426,21 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
         {/* ── Chart ───────────────────────────────────────────────────────── */}
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase mb-2">
-            Invested vs Projected Value Over Time
+            Invested vs Projected Value vs Tax Relief Over Time
           </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={chartData}>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={chartData} margin={{ bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-              <XAxis dataKey="year" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="year" height={36} tick={<YearAgeTick birthYear={birthYear} />} />
               <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${(v / 1_000_000).toFixed(1)}M`} />
-              <Tooltip formatter={(v: number, name: string) => [thb(v), name === "value" ? "Projected value" : "Total invested"]} />
+              <Tooltip formatter={(v: number, name: string) => [
+                thb(v),
+                name === "value" ? "Projected value" : name === "invested" ? "Total invested" : "Cumulative tax relief",
+              ]} />
               <Area type="monotone" dataKey="value" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.25} strokeWidth={2} />
               <Area type="monotone" dataKey="invested" stroke="#94a3b8" fill="#94a3b8" fillOpacity={0.15} strokeWidth={1.5} />
-            </AreaChart>
+              <Line type="monotone" dataKey="taxRelief" stroke="#10b981" strokeWidth={2} dot={false} />
+            </ComposedChart>
           </ResponsiveContainer>
           <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -226,8 +449,76 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
             <span className="flex items-center gap-1">
               <span className="w-2.5 h-2.5 rounded-sm bg-slate-400 inline-block" /> Total invested
             </span>
+            <span className="flex items-center gap-1">
+              <span className="w-8 border-t-2 border-emerald-500 inline-block" /> Cumulative tax relief
+            </span>
+            {birthYear && <span>· age shown is the profile owner's projected age each year</span>}
           </div>
         </div>
+
+        {/* ── Save / load scenarios ───────────────────────────────────────── */}
+        <div className="border-t border-border pt-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Input
+              value={scenarioName}
+              onChange={e => setScenarioName(e.target.value)}
+              placeholder={`e.g. "${fundLabel} · ฿${monthlyAmount.toLocaleString()}/mo · ${years}y"`}
+              className="max-w-xs"
+            />
+            <Button size="sm" variant="outline" onClick={handleSave} disabled={!userId}>
+              <Save size={13} />
+              Save this scenario
+            </Button>
+            <InfoTooltip content="Saves the current fund, monthly amount, years, tax bracket, and computed results as a named entry below — for comparing assumptions side by side. Stored only for this session (sessionStorage), cleared on logout." />
+          </div>
+
+          {savedScenarios.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {savedScenarios.map(s => (
+                <div key={s.id} className="flex items-center justify-between gap-3 text-xs bg-muted/40 rounded-md px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FolderOpen size={12} className="text-muted-foreground shrink-0" />
+                    <span className="font-medium truncate">{s.name}</span>
+                    <span className="text-muted-foreground shrink-0">
+                      {s.fundLabel} · ฿{s.monthlyAmount.toLocaleString()}/mo · {s.years}y · {(s.taxBracket * 100).toFixed(0)}% bracket
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                      {thb(s.results.futureValue - s.results.totalInvested + s.results.totalTaxRelief)}
+                    </span>
+                    <button onClick={() => handleLoad(s)} className="hover:underline text-blue-600 dark:text-blue-400">
+                      Load
+                    </button>
+                    <button onClick={() => handleRemove(s.id)} className="p-1 hover:bg-destructive/10 rounded-md" title="Remove this saved scenario">
+                      <Trash2 size={12} className="text-destructive" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── AI fund sources / usage ─────────────────────────────────────── */}
+        {aiFunds && aiFundsSources.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            Sources: {aiFundsSources.map((s, i) => (
+              <span key={s.url}>
+                {i > 0 && ", "}
+                <a href={s.url} target="_blank" rel="noreferrer" className="hover:underline text-blue-600 dark:text-blue-400">{s.title}</a>
+              </span>
+            ))}
+          </div>
+        )}
+        {aiFundsUsage && (
+          <TokenUsageStamp
+            inputTokens={aiFundsUsage.inputTokens}
+            outputTokens={aiFundsUsage.outputTokens}
+            remainingTokens={null}
+            tokenLimit={null}
+          />
+        )}
 
         {/* ── Assumptions ─────────────────────────────────────────────────── */}
         <p className="text-xs text-muted-foreground italic">

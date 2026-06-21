@@ -40,6 +40,32 @@ const BRACKETS = [
   { limit: Infinity, rate: 0.35 },
 ];
 
+/** Marginal Thai PIT rate that applies to the next baht of taxable income. */
+export function getMarginalRate(taxableIncome: number): number {
+  let cum = 0;
+  let prevLim = 0;
+  for (const b of BRACKETS) {
+    cum += b.limit - prevLim;
+    if (cum >= taxableIncome) return b.rate;
+    prevLim = b.limit;
+  }
+  return BRACKETS[BRACKETS.length - 1].rate;
+}
+
+/** Human-readable label for the bracket a given taxable income falls into. */
+export function getBracketLabel(taxableIncome: number): string {
+  let prevLim = 0;
+  for (const b of BRACKETS) {
+    if (taxableIncome <= b.limit) {
+      return b.limit === Infinity
+        ? `above ฿${prevLim.toLocaleString()}`
+        : `฿${prevLim.toLocaleString()}–฿${b.limit.toLocaleString()}`;
+    }
+    prevLim = b.limit;
+  }
+  return "";
+}
+
 export function calcThaiTax(taxableIncome: number): number {
   if (taxableIncome <= 0) return 0;
   let tax = 0;
@@ -138,14 +164,7 @@ export function computeTax(t: TaxAssumptions): TaxResult {
   const effectiveTaxRate = grossIncome > 0 ? estimatedTax / grossIncome : 0;
 
   // Marginal rate
-  let marginalRate = 0;
-  let cum = 0;
-  let prevLim = 0;
-  for (const b of BRACKETS) {
-    cum += b.limit - prevLim;
-    if (cum >= taxableIncome) { marginalRate = b.rate; break; }
-    prevLim = b.limit;
-  }
+  const marginalRate = getMarginalRate(taxableIncome);
 
   // Tax saved by RMF: tax without RMF minus tax with RMF
   const taxWithoutRMF = calcThaiTax(Math.max(0, taxableIncome + rmfDeduction));
