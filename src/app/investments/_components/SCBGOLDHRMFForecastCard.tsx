@@ -120,20 +120,21 @@ export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }
   const [showHistory, setShowHistory] = useState(false);
   const fetchedRef = useRef(false);
 
+  // On mount: only check cache. Do NOT auto-fetch from the AI on startup —
+  // fetching is now gated behind the "Generate AI forecast" button.
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
 
-    // Check cache first
     const cached = readCache();
     if (cached) {
       setForecast(cached.data);
       setStatus("done");
-      return;
     }
+  }, []);
 
+  const fetchForecast = () => {
     setStatus("loading");
-
     fetch("/api/investments/scbgoldhrmf-forecast", { method: "POST" })
       .then(r => r.json())
       .then((data: SCBGoldForecast) => {
@@ -142,27 +143,13 @@ export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }
         writeCache(data);
       })
       .catch(() => setStatus("error"));
-  }, []);
+  };
 
   const handleRefresh = () => {
     try { sessionStorage.removeItem(CACHE_KEY); } catch { /* ignore */ }
-    fetchedRef.current = false;
     setForecast(null);
-    setStatus("idle");
     setApplied(false);
-    // Re-trigger via useEffect next tick
-    setTimeout(() => {
-      fetchedRef.current = false;
-      setStatus("loading");
-      fetch("/api/investments/scbgoldhrmf-forecast", { method: "POST" })
-        .then(r => r.json())
-        .then((data: SCBGoldForecast) => {
-          setForecast(data);
-          setStatus("done");
-          writeCache(data);
-        })
-        .catch(() => setStatus("error"));
-    }, 0);
+    fetchForecast();
   };
 
   const handleApply = () => {
@@ -197,14 +184,16 @@ export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }
                 Updated {forecast.asOf}
               </span>
             )}
-            <button
-              onClick={handleRefresh}
-              disabled={status === "loading"}
-              className="p-1.5 hover:bg-accent rounded-md transition-colors disabled:opacity-40"
-              title="Refresh AI forecast"
-            >
-              <RefreshCw size={13} className={cn(status === "loading" && "animate-spin")} />
-            </button>
+            {status !== "idle" && (
+              <button
+                onClick={handleRefresh}
+                disabled={status === "loading"}
+                className="p-1.5 hover:bg-accent rounded-md transition-colors disabled:opacity-40"
+                title="Refresh AI forecast"
+              >
+                <RefreshCw size={13} className={cn(status === "loading" && "animate-spin")} />
+              </button>
+            )}
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -213,6 +202,19 @@ export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }
       </CardHeader>
 
       <CardContent className="space-y-4 pt-0">
+
+        {/* Idle state — forecast not yet requested */}
+        {status === "idle" && (
+          <div className="flex flex-col items-center gap-2.5 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Get an AI-generated return estimate for SCBGOLDHRMF based on 11 years of fund history.
+            </p>
+            <Button size="sm" onClick={fetchForecast}>
+              <Sparkles size={13} />
+              Generate AI forecast
+            </Button>
+          </div>
+        )}
 
         {/* Loading state */}
         {status === "loading" && (

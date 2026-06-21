@@ -14,6 +14,7 @@ import { ScenarioSimulator } from "./_components/ScenarioSimulator";
 import { PVDForecastCard } from "./_components/PVDForecastCard";
 import { SCBGOLDHRMFForecastCard } from "./_components/SCBGOLDHRMFForecastCard";
 import { AIRecommendationCard } from "./_components/AIRecommendationCard";
+import { DCASimulatorCard } from "./_components/DCASimulatorCard";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -271,6 +272,9 @@ export default function InvestmentsPage() {
         onApply={handleApplyAIGoldForecast}
         hasMatchingAccounts={investments.some(i => i.isActive && i.accountType === "RMF" && /gold|SCBGOLDHRMF/i.test(i.assetDescription))}
       />
+
+      {/* ── DCA / RMF ROI Simulator ───────────────────────────────────────────── */}
+      <DCASimulatorCard aiPVDReturn={aiPVDReturn} aiSCBGoldReturn={aiSCBGoldReturn} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         <StatCard
