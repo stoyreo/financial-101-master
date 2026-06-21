@@ -1,12 +1,18 @@
 /**
  * Fund Registry — shared source of truth for known fund policies.
  *
- * Each entry is keyed by the official fund code so any AI route can
- * import and reference it by name (making the code discoverable / indexable).
+ * This is a GENERIC, extensible registry — not a fixed list. Two real-data
+ * entries (PVDMPFEQ, SCBGOLDHRMF) ship as starter/example funds with full
+ * historical data, but every user can add their own PVD/RMF/SSF/other funds
+ * via `addCustomFund()`. Nothing in the app should assume every user holds
+ * these two specific SCB funds — they are examples, not defaults.
  *
- * Funds registered:
+ * Built-in example funds:
  *   PVDMPFEQ  — SCB Masterplan PVD, SET Index Equity policy (fact sheet 31 Dec 2025)
  *   SCBGOLDHRMF — SCB Gold THB Hedged RMF (data: WealthMagik / Finnomena, Apr 2026)
+ *
+ * User-added funds are stored per-user in sessionStorage (never localStorage —
+ * see CLAUDE.md data isolation rules) and merged with the built-ins at read time.
  */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -157,21 +163,118 @@ export const SCBGOLDHRMF: FundInfo = {
   ],
 };
 
-// ── Registry index ────────────────────────────────────────────────────────────
+// ── Registry index (built-in example funds) ───────────────────────────────────
 export const FUND_REGISTRY: Record<string, FundInfo> = {
   PVDMPFEQ,
   SCBGOLDHRMF,
 };
 
+// ── User-added custom funds ────────────────────────────────────────────────────
+// Stored in sessionStorage, scoped per-user (never localStorage — see CLAUDE.md
+// "Multi-User Data Isolation Checklist"). Lets any user register a fund that
+// isn't one of the two built-in examples, with as much or as little historical
+// data as they have on hand.
+
+/** Minimal shape a user fills in to register a new fund — most fields optional. */
+export interface CustomFundInput {
+  code: string;
+  nameEN: string;
+  nameTH?: string;
+  manager?: string;
+  benchmark?: string;
+  assetClass?: AssetClass;
+  fundType?: "PVD" | "RMF" | "SSF" | "other";
+  riskLevel?: number;
+  stdDevPct?: number;
+  trackingErrorPct?: number;
+  totalExpenseRatioPct?: number;
+  investmentPolicy?: string;
+  /** Optional known annual returns; if omitted, the AI forecast falls back to
+   *  asset-class-level reasoning instead of fund-specific history. */
+  annualReturns?: AnnualReturn[];
+}
+
+function customFundsKey(userId: string): string {
+  return `f101:investments:custom-funds:${userId}`;
+}
+
+function toFundInfo(input: CustomFundInput): FundInfo {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    code: input.code.trim().toUpperCase(),
+    nameEN: input.nameEN || input.code,
+    nameTH: input.nameTH || "",
+    manager: input.manager || "Unknown",
+    benchmark: input.benchmark || "—",
+    dataAsOf: today,
+    assetClass: input.assetClass || "other",
+    fundType: input.fundType || "other",
+    riskLevel: input.riskLevel ?? 5,
+    stdDevPct: input.stdDevPct ?? 0,
+    trackingErrorPct: input.trackingErrorPct ?? 0,
+    totalExpenseRatioPct: input.totalExpenseRatioPct ?? 0,
+    investmentPolicy: input.investmentPolicy || "User-defined fund — no policy data on file.",
+    sectorAllocation: {},
+    annualReturns: input.annualReturns || [],
+  };
+}
+
+/** Load this user's custom-added funds (sessionStorage; empty list if none / SSR). */
+export function loadCustomFunds(userId: string): FundInfo[] {
+  if (typeof window === "undefined" || !userId) return [];
+  try {
+    const raw = sessionStorage.getItem(customFundsKey(userId));
+    return raw ? (JSON.parse(raw) as FundInfo[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomFunds(userId: string, funds: FundInfo[]): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    sessionStorage.setItem(customFundsKey(userId), JSON.stringify(funds));
+  } catch {
+    // sessionStorage might be full — silently ignore
+  }
+}
+
+/** Register (or update, by code) a custom fund for this user. Returns the updated list. */
+export function addCustomFund(userId: string, input: CustomFundInput): FundInfo[] {
+  const fund = toFundInfo(input);
+  const existing = loadCustomFunds(userId).filter(f => f.code !== fund.code);
+  const updated = [...existing, fund];
+  saveCustomFunds(userId, updated);
+  return updated;
+}
+
+export function removeCustomFund(userId: string, code: string): FundInfo[] {
+  const updated = loadCustomFunds(userId).filter(f => f.code !== code);
+  saveCustomFunds(userId, updated);
+  return updated;
+}
+
+/** Full registry for this user: built-in example funds + their own custom funds. */
+export function getAllFunds(userId: string): FundInfo[] {
+  return [...Object.values(FUND_REGISTRY), ...loadCustomFunds(userId)];
+}
+
+/** Look up any fund (built-in or user-added) by code. */
+export function getFundByCode(userId: string, code: string): FundInfo | undefined {
+  return getAllFunds(userId).find(f => f.code === code);
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 export function arithmeticMean(fund: FundInfo): number {
+  if (fund.annualReturns.length === 0) return 0;
   const returns = fund.annualReturns.map(r => r.fund);
   return returns.reduce((s, r) => s + r, 0) / returns.length;
 }
 
 export function geometricMean(fund: FundInfo): number {
   const n = fund.annualReturns.length;
+  if (n === 0) return 0;
   const product = fund.annualReturns.reduce(
     (acc, r) => acc * (1 + r.fund / 100),
     1,
@@ -181,6 +284,20 @@ export function geometricMean(fund: FundInfo): number {
 
 /** Compact summary for embedding in AI prompts */
 export function fundSummaryForPrompt(fund: FundInfo): string {
+  if (fund.annualReturns.length === 0) {
+    return `
+FUND CODE: ${fund.code}
+Name: ${fund.nameEN}
+Manager: ${fund.manager}
+Fund type: ${fund.fundType} | Asset class: ${fund.assetClass}
+Investment policy: ${fund.investmentPolicy}
+
+No historical annual-return series is on file for this fund — base the forecast on
+its asset class (${fund.assetClass}) and fund type (${fund.fundType}) using general
+Thai market / asset-class fundamentals rather than fund-specific history.
+`.trim();
+  }
+
   const returnsNote = fund.annualReturns[0]?.approximate
     ? "(approximate, derived from gold USD price — fund is fully THB-hedged)"
     : "(official fact sheet data)";

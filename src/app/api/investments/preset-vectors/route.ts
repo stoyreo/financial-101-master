@@ -9,27 +9,25 @@
 
 import { NextResponse } from "next/server";
 import { aiComplete, extractJson } from "@/lib/ai-provider";
-import { PVDMPFEQ, fundSummaryForPrompt } from "@/lib/fund-registry";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
-// Inject PVDMPFEQ fund context so AI shifts for PVD are anchored to real data
-const PVD_CONTEXT = fundSummaryForPrompt(PVDMPFEQ);
-
+// Generic Thai market reference figures, used to calibrate shifts per
+// AccountType. These are deliberately asset-class-level, NOT anchored to any
+// single specific fund (e.g. PVDMPFEQ) — different users hold different
+// PVD/RMF funds, so the shift vectors must stay fund-agnostic.
 const SYSTEM = `You are a Thai investment strategist. Given today's date and global/Thai
 macro context, generate realistic return-shift vectors for Bull, Bear, and Recession scenarios.
 
 Shifts represent the DELTA added to each account type's BASE expected return (e.g., +0.03
 means "add 3% to whatever the user set"). Use Thai market history as anchor:
-  - SET total return: ~6–8% long-run
+  - SET total return: ~6–8% long-run (PVD accounts are commonly invested in SET-index or
+    similar equity-tracking policies — calibrate shifts to general Thai equity-fund behavior,
+    not any single fund, since different users hold different PVD/RMF funds)
   - Thai bonds/savings: ~1–2%
-  - PVD (specifically PVDMPFEQ, SET-index tracker): see fund data below
   - RMF/SSF equity funds: ~5–10%
   - Crypto: highly volatile
-
-PVDMPFEQ fund reference data (use when calibrating PVD shifts):
-${PVD_CONTEXT}
 
 Return STRICT JSON — no prose, no fences:
 {

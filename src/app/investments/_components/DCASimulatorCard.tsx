@@ -12,7 +12,7 @@ import {
   InfoTooltip,
 } from "@/components/ui";
 import { cn, pct, thb } from "@/lib/utils";
-import { PVDMPFEQ, SCBGOLDHRMF, geometricMean } from "@/lib/fund-registry";
+import { getAllFunds, geometricMean, type FundInfo } from "@/lib/fund-registry";
 import { computeIncomeTaxBreakdown, getMarginalRate, getBracketLabel } from "@/lib/engine/tax";
 import { useStore } from "@/lib/store";
 import { getSession } from "@/lib/auth-client";
@@ -46,10 +46,12 @@ const RISK_CATEGORY_LABELS: { key: keyof RiskBreakdown; label: string }[] = [
 ];
 
 interface Props {
-  /** AI best-estimate return for PVDMPFEQ, if a forecast has been generated */
-  aiPVDReturn?: number;
-  /** AI best-estimate return for SCBGOLDHRMF, if a forecast has been generated */
-  aiSCBGoldReturn?: number;
+  /** Current user, for loading their registered funds (built-in + custom) */
+  userId?: string;
+  /** AI best-estimate returns, keyed by fund code, populated as each fund's
+   *  FundForecastCard finishes loading. Generalises the old aiPVDReturn /
+   *  aiSCBGoldReturn pair, which only worked for two hardcoded SCB funds. */
+  aiReturnByFundCode?: Record<string, number>;
 }
 
 const TAX_BRACKETS = [0, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35];
@@ -100,10 +102,18 @@ function YearAgeTick({ x, y, payload, birthYear }: any) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
+export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }: Props) {
   const { incomes, profile } = useStore();
 
-  const [fundChoice, setFundChoice] = useState<string>("PVDMPFEQ");
+  // Collapsed by default — this is a deep "what-if" tool, not something that
+  // needs to be open on every page load.
+  const [collapsed, setCollapsed] = useState(true);
+
+  // Registry of built-in example funds + this user's own custom-added funds —
+  // populates the "Fund / Return Basis" dropdown dynamically instead of two
+  // hardcoded SCB-fund options.
+  const funds = useMemo(() => getAllFunds(userIdProp || ""), [userIdProp]);
+  const [fundChoice, setFundChoice] = useState<string>(() => funds[0]?.code ?? "custom");
   const [monthlyAmount, setMonthlyAmount] = useState(5000);
   const [years, setYears] = useState(15);
   const [customRate, setCustomRate] = useState(7); // % — used when fundChoice === "custom" or "ai:*"
@@ -171,7 +181,7 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   };
 
   // ── Saved scenarios (sessionStorage, per-user) ───────────────────────────────
-  const userId = getSession()?.userId;
+  const userId = userIdProp || getSession()?.userId;
   const [savedScenarios, setSavedScenarios] = useState<DCAScenario[]>([]);
   const [scenarioName, setScenarioName] = useState("");
 
@@ -183,35 +193,36 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   const selectedAIFund = fundChoice.startsWith("ai:")
     ? aiFunds?.find(f => f.code === fundChoice.slice(3))
     : undefined;
+  const selectedRegistryFund: FundInfo | undefined = funds.find(f => f.code === fundChoice);
 
   // Explainability for the AI ranking: how the picked fund compares to the
-  // rest of the AI's top-5 list and to the two historical funds already
-  // tracked in this app, so "how good is it" has a concrete, checkable answer
-  // rather than just trusting the AI's rank order.
+  // rest of the AI's top-5 list and to the registered funds already tracked
+  // in this app, so "how good is it" has a concrete, checkable answer rather
+  // than just trusting the AI's rank order.
   const aiFundStats = useMemo(() => {
     if (!aiFunds || aiFunds.length === 0) return null;
     const avgYoY = aiFunds.reduce((s, f) => s + f.yoyReturnPct, 0) / aiFunds.length;
     const sorted = [...aiFunds].sort((a, b) => b.yoyReturnPct - a.yoyReturnPct);
     const best = sorted[0];
     const runnerUp = sorted[1];
-    const pvdHist = geometricMean(PVDMPFEQ);
-    const goldHist = geometricMean(SCBGOLDHRMF);
-    return { avgYoY, best, runnerUp, pvdHist, goldHist };
+    return { avgYoY, best, runnerUp };
   }, [aiFunds]);
 
   const fundReturn = useMemo(() => {
-    if (fundChoice === "PVDMPFEQ") return aiPVDReturn ?? geometricMean(PVDMPFEQ) / 100;
-    if (fundChoice === "SCBGOLDHRMF") return aiSCBGoldReturn ?? geometricMean(SCBGOLDHRMF) / 100;
+    if (selectedRegistryFund) {
+      return aiReturnByFundCode[selectedRegistryFund.code] ?? geometricMean(selectedRegistryFund) / 100;
+    }
     if (selectedAIFund) return selectedAIFund.yoyReturnPct / 100;
     return customRate / 100;
-  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn, customRate, selectedAIFund]);
+  }, [selectedRegistryFund, aiReturnByFundCode, customRate, selectedAIFund]);
 
   const returnSource = useMemo(() => {
-    if (fundChoice === "PVDMPFEQ") return aiPVDReturn !== undefined ? "ai" : "historical";
-    if (fundChoice === "SCBGOLDHRMF") return aiSCBGoldReturn !== undefined ? "ai" : "historical";
+    if (selectedRegistryFund) {
+      return aiReturnByFundCode[selectedRegistryFund.code] !== undefined ? "ai" : "historical";
+    }
     if (selectedAIFund) return "ai-research";
     return "manual";
-  }, [fundChoice, aiPVDReturn, aiSCBGoldReturn, selectedAIFund]);
+  }, [selectedRegistryFund, aiReturnByFundCode, selectedAIFund]);
 
   // ── Auto-suggested tax bracket ───────────────────────────────────────────────
   // Explainable rule-based suggestion (not an LLM call): derives the user's
@@ -270,10 +281,8 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   }, [years, monthlyAmount, fundReturn, annualTaxRelief]);
 
   // ── Save / load / remove scenarios ───────────────────────────────────────────
-  const fundLabel = fundChoice === "PVDMPFEQ"
-    ? "PVDMPFEQ"
-    : fundChoice === "SCBGOLDHRMF"
-    ? "SCBGOLDHRMF"
+  const fundLabel = selectedRegistryFund
+    ? selectedRegistryFund.code
     : selectedAIFund
     ? `${selectedAIFund.code} (AI-suggested)`
     : `Custom (${pct(customRate / 100)})`;
@@ -326,9 +335,26 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
 
   return (
     <Card className="mb-6 border-blue-200 dark:border-blue-800">
-      <CardHeader className="pb-3">
+      <CardHeader
+        className="pb-3 cursor-pointer select-none"
+        onClick={() => setCollapsed(c => !c)}
+        role="button"
+        tabIndex={0}
+        aria-expanded={!collapsed}
+        onKeyDown={e => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setCollapsed(c => !c);
+          }
+        }}
+      >
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
+            {collapsed ? (
+              <ChevronRight size={16} className="text-muted-foreground shrink-0" />
+            ) : (
+              <ChevronDown size={16} className="text-muted-foreground shrink-0" />
+            )}
             <Calculator size={16} className="text-blue-500" />
             <CardTitle className="text-sm">DCA / RMF ROI Simulator</CardTitle>
             <Badge variant="outline" className="text-xs">What-if</Badge>
@@ -340,6 +366,7 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
         </p>
       </CardHeader>
 
+      {!collapsed && (
       <CardContent className="space-y-4 pt-0">
         {/* ── Last saved assumption summary ──────────────────────────────────── */}
         {lastSaved && (
@@ -396,8 +423,15 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
               <InfoTooltip content="Which fund's historical or AI-forecast return drives the projection. 'Custom rate' lets you type any assumed annual return. AI-suggested funds appear here after you run the research above." />
             </div>
             <Select value={fundChoice} onChange={e => setFundChoice(e.target.value)} className="mt-1">
-              <option value="PVDMPFEQ">PVDMPFEQ (Thai equity)</option>
-              <option value="SCBGOLDHRMF">SCBGOLDHRMF (Gold)</option>
+              {funds.length > 0 && (
+                <optgroup label="Your registered funds">
+                  {funds.map(f => (
+                    <option key={f.code} value={f.code}>
+                      {f.code} ({f.assetClass.replace("_", " ")})
+                    </option>
+                  ))}
+                </optgroup>
+              )}
               {aiFunds && aiFunds.length > 0 && (
                 <optgroup label="AI-suggested top RMF (YoY)">
                   {aiFunds.map(f => (
@@ -586,8 +620,7 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
                 , and {pct((aiFundStats.best.yoyReturnPct - aiFundStats.avgYoY) / 100)} above the average of these 5 ({pct(aiFundStats.avgYoY / 100)}).
               </p>
               <p>
-                For context, the two funds already tracked in this app returned {pct(aiFundStats.pvdHist / 100)}/yr
-                (PVDMPFEQ, 11-yr CAGR) and {pct(aiFundStats.goldHist / 100)}/yr (SCBGOLDHRMF, 11-yr CAGR) — a single
+                For context, your registered funds' historical CAGR is shown in the dropdown above — a single
                 year's YoY number is more volatile than a multi-year CAGR, so treat the AI's top pick as a recent
                 momentum signal, not a guaranteed forward return.
               </p>
@@ -775,6 +808,7 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
           </span>
         </p>
       </CardContent>
+      )}
     </Card>
   );
 }

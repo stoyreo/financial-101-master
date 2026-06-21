@@ -123,6 +123,11 @@ export interface InvestmentAccount {
   owner: string;
   notes: string;
   isActive: boolean;
+  /** Explicit link to a fund-registry entry (built-in example or user-added
+   *  custom fund), e.g. "PVDMPFEQ". Optional — accounts can be free-text with
+   *  no linked fund. Replaces the old approach of regex-matching the
+   *  description for the word "gold" to guess which fund an account holds. */
+  fundCode?: string;
 }
 
 // ── Retirement ───────────────────────────────────────────

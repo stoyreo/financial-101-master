@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { getSession, synthesizeSession } from "@/lib/auth-client";
+import { getSession, synthesizeSession, clearSession } from "@/lib/auth-client";
 import { useStore } from "@/lib/store";
 
 // Must stay in sync with providers.tsx PUBLIC_PATHS
@@ -17,9 +17,26 @@ interface AuthGuardProps {
  * (fp_current_user in sessionStorage) is missing — e.g. after a hard refresh,
  * OAuth callback, or magic-link login — synthesize the legacy session so that
  * getCurrentAccount(), loadUserNamespace(), and AutoSync all work correctly.
+ *
+ * 🔐 CRITICAL: A stale legacy session (and the Zustand store it points at) can
+ * survive in sessionStorage if a previous user never explicitly logged out
+ * (e.g. handed the device/tab to someone else who then signed into their OWN
+ * account). If we only checked "does a session exist", that stale session
+ * would be reused for the NEW Supabase user, leaking the previous user's
+ * cached financial data. So we must verify the existing legacy session's
+ * email actually matches the currently authenticated Supabase user — if not,
+ * wipe the store + session before re-bridging.
  */
 async function bridgeLegacySession(supabaseUserId: string, email: string) {
-  if (getSession()) return; // already set
+  const existing = getSession();
+  if (existing) {
+    if (existing.email && email && existing.email.toLowerCase() === email.toLowerCase()) {
+      return; // already set, and it's for the same user — safe to keep
+    }
+    // Mismatch (or unverifiable) — stale session from a different user. Clear it.
+    useStore.getState().clearStore?.();
+    clearSession();
+  }
   try {
     const res = await fetch("/api/auth/ensure-app-user", {
       method: "POST",
@@ -64,6 +81,16 @@ export function AuthGuard({ children }: AuthGuardProps) {
         // Clear Zustand store so next user doesn't see previous user's data
         useStore.getState().clearStore?.();
         router.replace("/login");
+        return;
+      }
+      // 🔐 A different user just signed in on top of an existing legacy
+      // session (e.g. device handed off without an explicit logout).
+      // Wipe the stale store/session before bridging to the new identity.
+      const cached = getSession();
+      const newEmail = session.user.email ?? "";
+      if (cached && cached.email && newEmail && cached.email.toLowerCase() !== newEmail.toLowerCase()) {
+        useStore.getState().clearStore?.();
+        clearSession();
       }
     });
 

@@ -130,7 +130,11 @@ export async function POST() {
 
     const msg = await client.messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      // Headroom so the final JSON (5 funds × 3 risk categories × up to 3
+      // indicators each, plus notes/sources) isn't truncated mid-object after
+      // web_search consumes context — this schema is larger than it looks.
+      // (Same fix as /api/investments/recommendation, which hit the same bug.)
+      max_tokens: 4096,
       system: SYSTEM,
       messages: [
         {
@@ -169,18 +173,30 @@ export async function POST() {
     try {
       parsed = JSON.parse(jsonStr);
     } catch {
+      // The model ignored the schema and returned prose (often a refusal-
+      // flavored explanation of why "current" data wasn't available) instead
+      // of JSON, or got cut off mid-response. This is the SAME underlying
+      // situation as an empty funds array — the AI couldn't comply this time
+      // — so it gets the same soft, retryable treatment below rather than a
+      // hard 502 that the frontend renders as an alarming error. Per the
+      // "not possible, fix" feedback: a refusal-shaped response must never
+      // surface as a hard failure.
       const truncated = (msg as any)?.stop_reason === "max_tokens";
-      return NextResponse.json(
-        {
-          error: "parse_failed",
-          reason: truncated ? "response_truncated" : "model_did_not_return_valid_json",
-          message: truncated
-            ? "The fund research was cut off before finishing. Please try again."
-            : "The AI responded but didn't return usable fund data. Please try again.",
-          raw: textOut,
+      return NextResponse.json({
+        asOf: null,
+        funds: [],
+        sources: [],
+        noDataReason: truncated
+          ? "The fund research was cut off before finishing. Please try again."
+          : "The AI didn't return usable fund data this time (it may have replied with an explanation instead of results). Please try again.",
+        usage: {
+          inputTokens: msg.usage?.input_tokens ?? null,
+          outputTokens: msg.usage?.output_tokens ?? null,
+          webSearches: (msg.usage as any)?.server_tool_use?.web_search_requests ?? 0,
+          model: MODEL,
         },
-        { status: 502 },
-      );
+        source: "claude-live",
+      });
     }
 
     const merged = new Map<string, { title: string; url: string }>();

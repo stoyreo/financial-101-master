@@ -162,6 +162,14 @@ export async function POST(req: Request) {
     const result = await aiStream(
       {
         system: buildServerSystemPrompt(profile, fullPlanContext),
+        // BASE_SYSTEM_PROMPT is fixed across every user/request; only the
+        // profile/plan context appended after it changes. Splitting it out
+        // lets Claude cache that static prefix instead of reprocessing it
+        // on every single chat turn.
+        cacheableSystemPrefix: BASE_SYSTEM_PROMPT,
+        // Conversations grow turn over turn and we resend the full history
+        // each time — cache everything before the newest user turn.
+        cacheConversation: true,
         messages: apiMessages,
         maxTokens: 1024,
         claudeModel: "claude-sonnet-4-6",

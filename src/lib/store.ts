@@ -962,15 +962,15 @@ export const useStore = create<Store>()(
         if (typeof window === "undefined") return {
           getItem: () => null, setItem: () => {}, removeItem: () => {},
         };
-        // One-time migration: if sessionStorage is empty but localStorage has data,
-        // copy it over so existing users don't lose data after the localStorage→sessionStorage switch.
+        // 🔐 REMOVED (2026-06-21): This used to blind-copy localStorage["financial-planner-
+        // storage-v3"] into sessionStorage for ANY tab with no user check. Because
+        // localStorage is shared across every tab on the same browser/device (unlike
+        // sessionStorage), this leaked whichever user's data was last cached there to
+        // brand-new tabs/users — before any auth check even ran. The one-time migration
+        // window (May 24, 2026) has long since closed, so we now just delete the legacy
+        // key outright instead of ever copying it forward.
         const KEY = "financial-planner-storage-v3";
-        if (!sessionStorage.getItem(KEY)) {
-          const legacy = localStorage.getItem(KEY);
-          if (legacy) {
-            try { sessionStorage.setItem(KEY, legacy); } catch { /* quota */ }
-          }
-        }
+        try { localStorage.removeItem(KEY); } catch { /* ignore */ }
         return sessionStorage; // sessionStorage clears on tab close — prevents cross-user data leakage
       }),
       onRehydrateStorage: () => async (state) => {

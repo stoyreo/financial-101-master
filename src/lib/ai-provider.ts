@@ -63,6 +63,16 @@ export class AiUnavailableError extends Error {
 
 export interface AiRequest {
   system: string;
+  /**
+   * Optional static instructions block that is a *prefix* of `system`. When
+   * set, the Claude transport splits `system` into this cacheable prefix
+   * (marked with an ephemeral `cache_control` breakpoint) plus the remaining
+   * dynamic suffix (e.g. per-user profile/plan context) sent uncached. This
+   * lets routes that prepend per-request data to a fixed instructions block
+   * still benefit from prompt caching on the part that never changes.
+   * Ignored by the Ollama transport (no caching concept there).
+   */
+  cacheableSystemPrefix?: string;
   messages: ProviderMessage[];
   /** Max tokens to generate. */
   maxTokens?: number;
@@ -74,6 +84,14 @@ export interface AiRequest {
   claudeModel?: string;
   /** Override the Ollama model (e.g. "gemma3", "mistral"). Falls back to OLLAMA_MODEL env. */
   ollamaModel?: string;
+  /**
+   * For growing multi-turn conversations (e.g. the chat avatar): mark the
+   * last message of the *previous* turns with an ephemeral `cache_control`
+   * breakpoint so resending the full history on each new turn reuses the
+   * cached prefix instead of reprocessing it. Ignored by Ollama and when
+   * there's only one message.
+   */
+  cacheConversation?: boolean;
 }
 
 export interface AiCompletion {
@@ -182,13 +200,59 @@ function claudeModelFor(req: AiRequest): string {
   return req.claudeModel || "claude-haiku-4-5-20251001";
 }
 
+// ---------------------------------------------------------------------------
+// Prompt caching helpers
+// ---------------------------------------------------------------------------
+//
+// Anthropic's prompt cache is opt-in per content block via
+// `cache_control: { type: "ephemeral" }`. A block below the model's minimum
+// cacheable size (1024 tokens for Sonnet/Opus, 2048 for Haiku) is simply
+// processed normally — marking it is always safe, never an error. We mark:
+//   1. The system prompt (or its static prefix, see `cacheableSystemPrefix`)
+//      so repeated calls with the same instructions reuse the cached read.
+//   2. The last message of the "previous turns" prefix in a growing
+//      multi-turn conversation, so resending history each turn is cheap.
+
+type TextBlock = { type: "text"; text: string; cache_control?: { type: "ephemeral" } };
+
+/** Builds the Claude `system` param, splitting off a cacheable prefix if one was provided. */
+function claudeSystemParam(req: AiRequest): TextBlock[] {
+  const prefix = req.cacheableSystemPrefix;
+  if (prefix && req.system.startsWith(prefix)) {
+    const suffix = req.system.slice(prefix.length).replace(/^\n+/, "");
+    const blocks: TextBlock[] = [{ type: "text", text: prefix, cache_control: { type: "ephemeral" } }];
+    if (suffix) blocks.push({ type: "text", text: suffix });
+    return blocks;
+  }
+  // No split requested (or the prefix doesn't actually match) — cache the
+  // whole system prompt as a single block.
+  return [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }];
+}
+
+/** Builds the Claude `messages` param, optionally marking a cache breakpoint at the end of prior turns. */
+function claudeMessagesParam(req: AiRequest): Array<{ role: "user" | "assistant"; content: string | TextBlock[] }> {
+  const msgs: Array<{ role: "user" | "assistant"; content: string | TextBlock[] }> = req.messages.map((m) => ({
+    role: m.role,
+    content: m.content,
+  }));
+  if (req.cacheConversation && msgs.length > 1) {
+    const idx = msgs.length - 2; // last message of the previous-turns prefix
+    const prior = msgs[idx];
+    msgs[idx] = {
+      role: prior.role,
+      content: [{ type: "text", text: prior.content as string, cache_control: { type: "ephemeral" } }],
+    };
+  }
+  return msgs;
+}
+
 async function claudeComplete(req: AiRequest): Promise<string> {
   const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY! });
   const msg = await client.messages.create({
     model: claudeModelFor(req),
     max_tokens: req.maxTokens ?? 1024,
-    system: req.system,
-    messages: req.messages as any,
+    system: claudeSystemParam(req),
+    messages: claudeMessagesParam(req) as any,
   });
   return msg.content
     .filter((b) => b.type === "text")
@@ -201,8 +265,8 @@ function claudeStream(req: AiRequest): ReadableStream<Uint8Array> {
   const stream = client.messages.stream({
     model: req.claudeModel || "claude-sonnet-4-6",
     max_tokens: req.maxTokens ?? 1024,
-    system: req.system,
-    messages: req.messages as any,
+    system: claudeSystemParam(req),
+    messages: claudeMessagesParam(req) as any,
   });
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
