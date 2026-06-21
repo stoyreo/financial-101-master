@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
 import {
   Calculator, TrendingUp, Info, Save, Trash2, Sparkles, Loader2, AlertTriangle, FolderOpen,
+  ChevronDown, ChevronRight,
 } from "lucide-react";
 import {
   Card, CardHeader, CardTitle, CardContent, NumberInput, Select, Label, Badge, Button, Input,
@@ -22,15 +23,27 @@ import {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+type RiskIndicator = { name: string; note: string };
+type RiskCategory = { score: number; indicators: RiskIndicator[] };
+type RiskBreakdown = { geopolitics: RiskCategory; wealth: RiskCategory; stability: RiskCategory };
+
 type AIFund = {
   rank: number;
   code: string;
   name: string;
   manager: string;
   yoyReturnPct: number;
+  /** 1-8, server-derived from riskBreakdown — see computeOverallRisk on the API route */
   riskLevel: number;
+  riskBreakdown?: RiskBreakdown;
   note: string;
 };
+
+const RISK_CATEGORY_LABELS: { key: keyof RiskBreakdown; label: string }[] = [
+  { key: "geopolitics", label: "Geopolitics" },
+  { key: "wealth", label: "Wealth / economic" },
+  { key: "stability", label: "Stability" },
+];
 
 interface Props {
   /** AI best-estimate return for PVDMPFEQ, if a forecast has been generated */
@@ -104,6 +117,7 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   const [aiFundsAsOf, setAiFundsAsOf] = useState<string | null>(null);
   const [aiFundsSources, setAiFundsSources] = useState<{ title: string; url: string }[]>([]);
   const [aiFundsUsage, setAiFundsUsage] = useState<{ inputTokens: number | null; outputTokens: number | null } | null>(null);
+  const [expandedRiskCode, setExpandedRiskCode] = useState<string | null>(null);
 
   const fetchTopRMFFunds = async () => {
     setAiFundsStatus("loading");
@@ -116,11 +130,17 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
         setAiFundsStatus("error");
         return;
       }
-      setAiFunds(data.funds ?? []);
+      const funds: AIFund[] = data.funds ?? [];
+      setAiFunds(funds);
       setAiFundsAsOf(data.asOf ?? null);
       setAiFundsSources(data.sources ?? []);
       setAiFundsUsage(data.usage ?? null);
       setAiFundsStatus("done");
+      // Auto-select the #1-ranked fund into the Fund/Return Basis dropdown —
+      // the user asked for the AI result to populate the dropdown automatically
+      // rather than requiring a manual pick after researching.
+      const top = funds.find(f => f.rank === 1) ?? funds[0];
+      if (top) setFundChoice(`ai:${top.code}`);
     } catch {
       setAiFundsError("Network error. Check your connection and try again.");
       setAiFundsStatus("error");
@@ -140,6 +160,21 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   const selectedAIFund = fundChoice.startsWith("ai:")
     ? aiFunds?.find(f => f.code === fundChoice.slice(3))
     : undefined;
+
+  // Explainability for the AI ranking: how the picked fund compares to the
+  // rest of the AI's top-5 list and to the two historical funds already
+  // tracked in this app, so "how good is it" has a concrete, checkable answer
+  // rather than just trusting the AI's rank order.
+  const aiFundStats = useMemo(() => {
+    if (!aiFunds || aiFunds.length === 0) return null;
+    const avgYoY = aiFunds.reduce((s, f) => s + f.yoyReturnPct, 0) / aiFunds.length;
+    const sorted = [...aiFunds].sort((a, b) => b.yoyReturnPct - a.yoyReturnPct);
+    const best = sorted[0];
+    const runnerUp = sorted[1];
+    const pvdHist = geometricMean(PVDMPFEQ);
+    const goldHist = geometricMean(SCBGOLDHRMF);
+    return { avgYoY, best, runnerUp, pvdHist, goldHist };
+  }, [aiFunds]);
 
   const fundReturn = useMemo(() => {
     if (fundChoice === "PVDMPFEQ") return aiPVDReturn ?? geometricMean(PVDMPFEQ) / 100;
@@ -367,6 +402,131 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
               {selectedAIFund.name} — {selectedAIFund.manager}. {selectedAIFund.note}
               {selectedAIFund.riskLevel > 0 && ` Risk level ${selectedAIFund.riskLevel}/8.`}
             </span>
+          </div>
+        )}
+
+        {/* ── AI ranking explainability: how good is the pick, and vs what? ─── */}
+        {aiFunds && aiFunds.length > 0 && aiFundStats && (
+          <div className="rounded-lg border border-violet-200 dark:border-violet-800/50 overflow-hidden">
+            <div className="bg-violet-50 dark:bg-violet-900/10 px-3 py-2 text-xs font-medium text-violet-800 dark:text-violet-300 flex items-center gap-1.5">
+              <Sparkles size={12} />
+              Why the AI ranked these this way
+            </div>
+            <table className="w-full text-xs">
+              <thead className="text-muted-foreground border-b border-border">
+                <tr>
+                  <th className="text-left font-medium px-3 py-1.5 w-5"></th>
+                  <th className="text-left font-medium px-3 py-1.5">#</th>
+                  <th className="text-left font-medium px-3 py-1.5">Fund</th>
+                  <th className="text-right font-medium px-3 py-1.5">YoY</th>
+                  <th className="text-right font-medium px-3 py-1.5">Risk</th>
+                  <th className="text-left font-medium px-3 py-1.5">Why it ranks here</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiFunds.map(f => {
+                  const isExpanded = expandedRiskCode === f.code;
+                  const hasBreakdown = !!f.riskBreakdown;
+                  return (
+                    <Fragment key={f.code}>
+                      <tr
+                        className={cn(
+                          "border-b border-border/50 last:border-0",
+                          fundChoice === `ai:${f.code}` && "bg-violet-50/60 dark:bg-violet-900/10",
+                        )}
+                      >
+                        <td className="px-3 py-1.5">
+                          {hasBreakdown && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedRiskCode(isExpanded ? null : f.code)}
+                              className="text-muted-foreground hover:text-foreground"
+                              title="Show risk breakdown"
+                              aria-label={isExpanded ? "Collapse risk breakdown" : "Expand risk breakdown"}
+                            >
+                              {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 tabular-nums">{f.rank}</td>
+                        <td className="px-3 py-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setFundChoice(`ai:${f.code}`)}
+                            className="font-medium hover:underline text-left"
+                            title="Use this fund as the return basis"
+                          >
+                            {f.code}
+                          </button>
+                          <div className="text-muted-foreground">{f.manager}</div>
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{pct(f.yoyReturnPct / 100)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
+                          {f.riskLevel > 0 ? `${f.riskLevel}/8` : "—"}
+                        </td>
+                        <td className="px-3 py-1.5 text-muted-foreground">{f.note}</td>
+                      </tr>
+                      {isExpanded && f.riskBreakdown && (
+                        <tr className="border-b border-border/50 last:border-0 bg-muted/20">
+                          <td colSpan={6} className="px-3 py-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {RISK_CATEGORY_LABELS.map(({ key, label }) => {
+                                const cat = f.riskBreakdown![key];
+                                if (!cat) return null;
+                                return (
+                                  <div key={key}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="font-medium text-foreground">{label}</span>
+                                      <span className="tabular-nums text-muted-foreground">{cat.score}/5</span>
+                                    </div>
+                                    <div className="h-1.5 rounded-full bg-border overflow-hidden mb-1.5">
+                                      <div
+                                        className={cn(
+                                          "h-full rounded-full",
+                                          cat.score <= 2 ? "bg-emerald-500" : cat.score === 3 ? "bg-amber-500" : "bg-red-500",
+                                        )}
+                                        style={{ width: `${(cat.score / 5) * 100}%` }}
+                                      />
+                                    </div>
+                                    <ul className="space-y-0.5 text-muted-foreground">
+                                      {cat.indicators.slice(0, 3).map((ind, i) => (
+                                        <li key={i}>
+                                          <span className="font-medium text-foreground/80">{ind.name}:</span> {ind.note}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <p className="text-muted-foreground mt-2">
+                              Final risk {f.riskLevel}/8 = average of the three category scores (1-5 each), rescaled to the
+                              1-8 Thai SEC-style range — not a number the AI picked directly.
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="px-3 py-2 text-xs text-muted-foreground bg-muted/20 space-y-1">
+              <p>
+                <span className="font-medium text-foreground">#{aiFundStats.best.rank} {aiFundStats.best.code}</span> leads on raw
+                1-year return at {pct(aiFundStats.best.yoyReturnPct / 100)}
+                {aiFundStats.runnerUp && (
+                  <> — {pct((aiFundStats.best.yoyReturnPct - aiFundStats.runnerUp.yoyReturnPct) / 100)} ahead of the #2 pick ({aiFundStats.runnerUp.code})</>
+                )}
+                , and {pct((aiFundStats.best.yoyReturnPct - aiFundStats.avgYoY) / 100)} above the average of these 5 ({pct(aiFundStats.avgYoY / 100)}).
+              </p>
+              <p>
+                For context, the two funds already tracked in this app returned {pct(aiFundStats.pvdHist / 100)}/yr
+                (PVDMPFEQ, 11-yr CAGR) and {pct(aiFundStats.goldHist / 100)}/yr (SCBGOLDHRMF, 11-yr CAGR) — a single
+                year's YoY number is more volatile than a multi-year CAGR, so treat the AI's top pick as a recent
+                momentum signal, not a guaranteed forward return.
+              </p>
+            </div>
           </div>
         )}
 
