@@ -39,10 +39,20 @@ Thai RMF (Retirement Mutual Fund) funds that qualify for personal income tax rel
 (deductible up to 30% of assessable income, max ฿500,000 combined with PVD/SSF).
 
 Use the web_search tool SPARINGLY (you have at most ${MAX_WEB_SEARCHES} searches) to find real,
-currently-offered RMF funds and their year-over-year (1-year, or most recent full-year) returns.
+currently-offered RMF funds and their most recent available return figures.
 Prefer reputable sources (WealthMagik, Morningstar Thailand, Finnomena, AMC fact sheets, SEC Thailand).
-Rank by YoY return, descending. Do NOT invent funds or figures — every fund and number must come from
+Rank by that return, descending. Do NOT invent funds or figures — every fund and number must come from
 something you actually found.
+
+IMPORTANT — always return best-effort results, never refuse: a fully-verified, current-calendar-year
+1-year return will often NOT be available (search results lag the present). That is expected, not a
+reason to fail. Use whatever the most recent verified return figure is for each fund (trailing 1-year,
+YTD, or most recent completed calendar year — whichever is freshest in your sources), and record exactly
+which period that is in "returnPeriod" (e.g. "YTD Nov 2024", "FY2024", "trailing 12mo to Mar 2025").
+If figures are mixed across funds (some YTD, some FY), that's fine — note it in "dataFreshnessNote".
+You must ALWAYS output the funds array with up to 5 real funds and real numbers — never output prose,
+an apology, or a refusal instead of the JSON schema below, even if the freshest data you found is older
+than you'd like.
 
 For EACH fund, also assess risk along three categories — geopolitics, wealth/economic, and
 stability — using up to 3 short, concrete sub-indicators per category (named facts you can point
@@ -59,13 +69,15 @@ OUTPUT: After any searching, your FINAL message must be STRICT JSON only — no 
 fences, matching exactly this schema:
 {
   "asOf": string,                              // ISO date you consider the data current as of
-  "funds": [                                   // top 5, ranked by YoY return descending
+  "returnPeriod": string,                      // freshest period your figures actually cover, e.g. "YTD Nov 2024", "FY2024"
+  "dataFreshnessNote": string,                 // optional: note if periods are mixed across funds, or any other caveat
+  "funds": [                                   // top 5, ranked by return descending — REQUIRED, never empty, never a refusal
     {
       "rank": number,
       "code": string,                          // official fund ticker/code
       "name": string,                          // fund name
       "manager": string,                       // AMC / fund house
-      "yoyReturnPct": number,                  // most recent 1-year return, as a percentage e.g. 18.4
+      "yoyReturnPct": number,                  // the return for that fund over "returnPeriod", as a percentage e.g. 18.4
       "riskBreakdown": {
         "geopolitics": { "score": number, "indicators": [{ "name": string, "note": string }] },
         "wealth": { "score": number, "indicators": [{ "name": string, "note": string }] },
@@ -175,8 +187,8 @@ export async function POST() {
     for (const s of [...(parsed.sources ?? []), ...citationSources]) {
       if (s?.url && !merged.has(s.url)) merged.set(s.url, { title: s.title || s.url, url: s.url });
     }
-    parsed.sources = Array.from(merged.values());
-    parsed.funds = Array.isArray(parsed.funds)
+    const sources = Array.from(merged.values());
+    const funds = Array.isArray(parsed.funds)
       ? parsed.funds.slice(0, 5).map((f: any) => ({
           ...f,
           riskLevel: computeOverallRisk(f.riskBreakdown),
@@ -190,7 +202,40 @@ export async function POST() {
       model: MODEL,
     };
 
-    return NextResponse.json({ ...parsed, usage, source: "claude-live" });
+    if (funds.length === 0) {
+      // The model produced JSON but no usable funds — surface this as a soft
+      // "no data" result, not a hard ai_unavailable error. Critically, we do
+      // NOT spread `parsed` directly into the response: if the model invented
+      // its own ad hoc "error"/"message" fields instead of following the
+      // schema, blindly spreading them would leak into this 200 response and
+      // falsely trip the frontend's generic error-detection (which only
+      // checks for a truthy `data.error`).
+      return NextResponse.json({
+        asOf: typeof parsed.asOf === "string" ? parsed.asOf : null,
+        funds: [],
+        sources,
+        noDataReason:
+          typeof parsed.dataFreshnessNote === "string"
+            ? parsed.dataFreshnessNote
+            : typeof parsed.message === "string"
+            ? parsed.message
+            : "The AI couldn't find verified current return data for Thai RMF funds this time.",
+        usage,
+        source: "claude-live",
+      });
+    }
+
+    // Only pass through the specific fields we expect — same reasoning as
+    // above, applied to the success path.
+    return NextResponse.json({
+      asOf: typeof parsed.asOf === "string" ? parsed.asOf : null,
+      funds,
+      sources,
+      returnPeriod: typeof parsed.returnPeriod === "string" ? parsed.returnPeriod : null,
+      dataFreshnessNote: typeof parsed.dataFreshnessNote === "string" ? parsed.dataFreshnessNote : null,
+      usage,
+      source: "claude-live",
+    });
   } catch (e: any) {
     console.error("rmf-top-funds error:", e);
     const raw = String(e?.message ?? "");

@@ -269,9 +269,12 @@ export function PVDForecastCard({ onApply, hasPVDAccounts = false }: Props) {
                       </div>
                     </div>
                     <div className="flex gap-6 text-center">
-                      <ReturnBadge value={-7.88} label="Last year (2025)" />
                       <ReturnBadge
-                        value={PVDMPFEQ.annualReturns.reduce((s, r) => s + r.fund, 0) / PVDMPFEQ.annualReturns.length}
+                        value={(PVDMPFEQ.annualReturns.find(r => r.yearCE === 2025)?.fund ?? 0) / 100}
+                        label="Last year (2025)"
+                      />
+                      <ReturnBadge
+                        value={(PVDMPFEQ.annualReturns.reduce((s, r) => s + r.fund, 0) / PVDMPFEQ.annualReturns.length) / 100}
                         label="11yr avg"
                       />
                     </div>

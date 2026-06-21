@@ -118,13 +118,24 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
   const [aiFundsSources, setAiFundsSources] = useState<{ title: string; url: string }[]>([]);
   const [aiFundsUsage, setAiFundsUsage] = useState<{ inputTokens: number | null; outputTokens: number | null } | null>(null);
   const [expandedRiskCode, setExpandedRiskCode] = useState<string | null>(null);
+  // Soft, non-blocking caveat about data freshness (e.g. "figures are YTD, not
+  // full-year") — shown alongside a SUCCESSFUL result, distinct from a hard
+  // backend failure. Never blocks the funds from displaying.
+  const [aiFundsCaveat, setAiFundsCaveat] = useState<string | null>(null);
 
   const fetchTopRMFFunds = async () => {
     setAiFundsStatus("loading");
     setAiFundsError(null);
+    setAiFundsCaveat(null);
     try {
       const res = await fetch("/api/investments/rmf-top-funds", { method: "POST" });
       const data = await res.json();
+      // Only treat this as a hard failure for genuine backend problems
+      // (no API key, rate limited, auth failed, etc., or an HTTP error
+      // status) — NOT for the AI simply not finding fully-current-year data.
+      // The route never reports "no funds found" as `data.error`; it
+      // returns `funds: []` with a `noDataReason` instead, so this check no
+      // longer misfires on the model's own freshness caveats.
       if (!res.ok || data.error) {
         setAiFundsError(data.message ?? "Could not fetch fund rankings. Please try again.");
         setAiFundsStatus("error");
@@ -135,6 +146,18 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
       setAiFundsAsOf(data.asOf ?? null);
       setAiFundsSources(data.sources ?? []);
       setAiFundsUsage(data.usage ?? null);
+      if (funds.length === 0) {
+        // Best-effort search came back empty this time — soft caveat, not a
+        // hard error. Let the user retry without an alarming failure state.
+        setAiFundsCaveat(data.noDataReason ?? "No verified fund data found this time — try again in a moment.");
+        setAiFundsStatus("idle");
+        return;
+      }
+      setAiFundsCaveat(
+        [data.returnPeriod ? `Figures shown are for ${data.returnPeriod}.` : null, data.dataFreshnessNote]
+          .filter(Boolean)
+          .join(" ") || null,
+      );
       setAiFundsStatus("done");
       // Auto-select the #1-ranked fund into the Fund/Return Basis dropdown —
       // the user asked for the AI result to populate the dropdown automatically
@@ -287,6 +310,20 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
     setTaxBracket(s.taxBracket);
   };
 
+  // dca-scenarios.ts prepends on save, so the most recently saved entry is
+  // always first — used for the "last saved" summary shown on the card.
+  const lastSaved = savedScenarios[0] ?? null;
+  const lastSavedRelative = useMemo(() => {
+    if (!lastSaved) return null;
+    const ms = Date.now() - new Date(lastSaved.createdAt).getTime();
+    const mins = Math.round(ms / 60000);
+    if (mins < 1) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.round(hrs / 24)}d ago`;
+  }, [lastSaved]);
+
   return (
     <Card className="mb-6 border-blue-200 dark:border-blue-800">
       <CardHeader className="pb-3">
@@ -304,6 +341,24 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
       </CardHeader>
 
       <CardContent className="space-y-4 pt-0">
+        {/* ── Last saved assumption summary ──────────────────────────────────── */}
+        {lastSaved && (
+          <button
+            type="button"
+            onClick={() => handleLoad(lastSaved)}
+            className="w-full flex items-center justify-between gap-3 text-xs bg-blue-50/60 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800/40 rounded-md px-3 py-2 text-left hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            title="Click to reload this saved assumption"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <FolderOpen size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
+              <span className="text-muted-foreground shrink-0">Last saved:</span>
+              <span className="font-medium truncate">{lastSaved.name}</span>
+              <span className="text-muted-foreground shrink-0">{lastSavedRelative}</span>
+            </div>
+            <span className="text-blue-600 dark:text-blue-400 font-medium shrink-0">Reload</span>
+          </button>
+        )}
+
         {/* ── AI: top RMF funds by YoY return ────────────────────────────────── */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={fetchTopRMFFunds} disabled={aiFundsStatus === "loading"}>
@@ -320,6 +375,16 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
           <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 rounded-lg p-3">
             <AlertTriangle size={14} className="shrink-0" />
             <span>{aiFundsError}</span>
+          </div>
+        )}
+
+        {/* Soft, non-blocking caveat — data freshness note on a successful
+            result, or "nothing found this time, try again" — never the same
+            alarming treatment as a genuine backend failure above. */}
+        {aiFundsCaveat && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg p-2.5">
+            <Info size={13} className="shrink-0" />
+            <span>{aiFundsCaveat}</span>
           </div>
         )}
 
@@ -635,7 +700,20 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
           {savedScenarios.length > 0 && (
             <div className="mt-3 space-y-1.5">
               {savedScenarios.map(s => (
-                <div key={s.id} className="flex items-center justify-between gap-3 text-xs bg-muted/40 rounded-md px-3 py-2">
+                <div
+                  key={s.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleLoad(s)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleLoad(s);
+                    }
+                  }}
+                  title="Click to load this saved assumption"
+                  className="flex items-center justify-between gap-3 text-xs bg-muted/40 hover:bg-muted/70 rounded-md px-3 py-2 cursor-pointer transition-colors"
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <FolderOpen size={12} className="text-muted-foreground shrink-0" />
                     <span className="font-medium truncate">{s.name}</span>
@@ -647,10 +725,15 @@ export function DCASimulatorCard({ aiPVDReturn, aiSCBGoldReturn }: Props) {
                     <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
                       {thb(s.results.futureValue - s.results.totalInvested + s.results.totalTaxRelief)}
                     </span>
-                    <button onClick={() => handleLoad(s)} className="hover:underline text-blue-600 dark:text-blue-400">
-                      Load
-                    </button>
-                    <button onClick={() => handleRemove(s.id)} className="p-1 hover:bg-destructive/10 rounded-md" title="Remove this saved scenario">
+                    <span className="hover:underline text-blue-600 dark:text-blue-400">Load</span>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        handleRemove(s.id);
+                      }}
+                      className="p-1 hover:bg-destructive/10 rounded-md"
+                      title="Remove this saved scenario"
+                    >
                       <Trash2 size={12} className="text-destructive" />
                     </button>
                   </div>

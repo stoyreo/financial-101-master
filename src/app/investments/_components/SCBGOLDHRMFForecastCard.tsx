@@ -269,9 +269,12 @@ export function SCBGOLDHRMFForecastCard({ onApply, hasMatchingAccounts = false }
                       </div>
                     </div>
                     <div className="flex gap-6 text-center">
-                      <ReturnBadge value={28.5} label="Last year (2025)" />
                       <ReturnBadge
-                        value={SCBGOLDHRMF.annualReturns.reduce((s, r) => s + r.fund, 0) / SCBGOLDHRMF.annualReturns.length}
+                        value={(SCBGOLDHRMF.annualReturns.find(r => r.yearCE === 2025)?.fund ?? 0) / 100}
+                        label="Last year (2025)"
+                      />
+                      <ReturnBadge
+                        value={(SCBGOLDHRMF.annualReturns.reduce((s, r) => s + r.fund, 0) / SCBGOLDHRMF.annualReturns.length) / 100}
                         label="11yr avg"
                       />
                     </div>
