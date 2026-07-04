@@ -34,8 +34,8 @@ export const maxDuration = 60;
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_WEB_SEARCHES = 4; // hard cap → bounds token/cost per click
 
-const SYSTEM = `You are a disciplined US-equity tactical analyst. The user wants SHORT-TERM
-(7-14 trading day) idea candidates from LIQUID S&P 500 large-cap stocks only.
+const systemPrompt = (horizonDays: number) => `You are a disciplined US-equity tactical analyst. The user wants SHORT-TERM
+(~${horizonDays} trading day) idea candidates from LIQUID S&P 500 large-cap stocks only.
 
 Use the web_search tool (at most ${MAX_WEB_SEARCHES} searches) to ground everything in what is
 happening RIGHT NOW: recent price action / momentum, upcoming earnings dates, analyst
@@ -46,7 +46,13 @@ Do NOT invent prices, dates, or figures — only report what you actually found.
 Pick 4-6 candidates. Skew LONG candidates; you may include at most one "avoid"
 (stock facing a near-term negative catalyst) for contrast. Be quantitative and honest:
 short-horizon prediction is low-signal, so calibrate confidence conservatively
-(a confidence above 75 should be rare).
+(a confidence above 75 should be rare).${horizonDays <= 5 ? `
+
+IMPORTANT — ULTRA-SHORT window (${horizonDays} trading days): only candidates whose
+catalyst lands INSIDE the window qualify (earnings/events dated within ${horizonDays} trading
+days, or momentum already in motion). Expected-move bands must be proportionally tighter
+than a 2-week view, and confidence even more conservative — most ${horizonDays}-day moves
+are noise.` : ""}
 
 OUTPUT: After any searching, your FINAL message must be STRICT JSON only — no prose,
 no markdown fences, matching exactly this schema:
@@ -102,8 +108,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const riskProfile: string = typeof body?.riskProfile === "string" ? body.riskProfile : "moderate";
+    // 3–5 day "ultra-short" mode is allowed; anything else clamps into 3..14.
     const horizonDaysRaw = Number(body?.horizonDays);
-    const horizonDays = Number.isFinite(horizonDaysRaw) ? Math.min(14, Math.max(7, Math.round(horizonDaysRaw))) : 10;
+    const horizonDays = Number.isFinite(horizonDaysRaw) ? Math.min(14, Math.max(3, Math.round(horizonDaysRaw))) : 10;
 
     const today = new Date().toISOString().slice(0, 10);
     const userPrompt = `Today is ${today}. My risk profile: ${riskProfile}.
@@ -118,7 +125,7 @@ Return STRICT JSON only as specified.`;
       // Headroom so the final JSON (pulse + 4-6 picks + sources) isn't
       // truncated mid-object after web_search consumes context.
       max_tokens: 4096,
-      system: SYSTEM,
+      system: systemPrompt(horizonDays),
       messages: [{ role: "user", content: userPrompt }],
       tools: [
         {

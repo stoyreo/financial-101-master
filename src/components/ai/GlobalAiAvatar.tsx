@@ -162,24 +162,48 @@ export default function GlobalAiAvatar() {
 
   return (
     <>
-      {/* Launcher orb */}
+      {/* Launcher tab — thin, edge-docked on the right, vertically centered.
+          Sits subtly beside the scrollbar and slides out slightly on hover. */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-2 rounded-full pl-3 pr-4 py-2.5 shadow-lg transition-transform hover:scale-105"
+          className="group flex flex-col items-center gap-2 py-3 shadow-lg"
           style={{
             position: "fixed",
-            left: 20,
-            bottom: 20,
+            right: 0,
+            top: "50%",
+            transform: "translateY(-50%) translateX(6px)",
+            width: 26,
             zIndex: 71,
+            borderTopLeftRadius: 10,
+            borderBottomLeftRadius: 10,
+            borderTopRightRadius: 0,
+            borderBottomRightRadius: 0,
             background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
             color: "#eff6ff",
             border: "1px solid rgba(96,165,250,0.4)",
+            borderRight: "none",
+            opacity: 0.55,
+            transition: "opacity 160ms ease, transform 160ms ease",
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.opacity = "1";
+            e.currentTarget.style.transform = "translateY(-50%) translateX(0)";
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.opacity = "0.55";
+            e.currentTarget.style.transform = "translateY(-50%) translateX(6px)";
           }}
           title="Open Fin — your AI assistant"
+          aria-label="Ask Fin — your AI assistant"
         >
-          <Sparkles className="h-4 w-4" />
-          <span className="text-xs font-semibold">Ask Fin</span>
+          <Sparkles className="h-4 w-4 shrink-0" />
+          <span
+            className="text-[10px] font-semibold tracking-wide"
+            style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
+          >
+            Ask Fin
+          </span>
         </button>
       )}
 

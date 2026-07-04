@@ -272,7 +272,7 @@ function SimulationPanel({ pick, defaultHorizon, entryPrice }: { pick: Pick; def
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           Horizon
           <input
-            type="range" min={7} max={14} step={1} value={horizon}
+            type="range" min={3} max={14} step={1} value={horizon}
             onChange={(e) => setHorizon(Number(e.target.value))}
             className="accent-violet-500"
           />
@@ -364,6 +364,9 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
   const [pinned, setPinned] = useState<Set<string>>(new Set());
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [cachedAt, setCachedAt] = useState<string | null>(null);
+  // Trade-window mode: ultra-short (3–5 trading days) or standard (7–14).
+  const [horizonMode, setHorizonMode] = useState<"3-5" | "7-14">("3-5");
+  const horizonDays = horizonMode === "3-5" ? 4 : 10;
 
   // Hydrate today's cached scan on mount (upgrade #5).
   useEffect(() => {
@@ -437,7 +440,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
       const res = await fetch("/api/investments/short-term-picks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ riskProfile, horizonDays: 10 }),
+        body: JSON.stringify({ riskProfile, horizonDays }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -488,7 +491,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
     } finally {
       setLoading(false);
     }
-  }, [riskProfile, userId, fetchPrices]);
+  }, [riskProfile, userId, fetchPrices, horizonDays]);
 
   const selectedPick = result?.picks.find((p) => p.ticker === selected) ?? null;
 
@@ -524,17 +527,38 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
             <span className="bg-gradient-to-r from-blue-600 via-violet-600 to-blue-600 bg-clip-text text-transparent stg-shimmer">
               AI Short-Term Radar — US Stocks
             </span>
-            <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">7–14 days</Badge>
+            <Badge className="bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+              {result ? `${result.horizonDays <= 5 ? "3–5" : "7–14"} days` : horizonMode === "3-5" ? "3–5 days" : "7–14 days"}
+            </Badge>
             {cachedAt && !loading && (
               <Badge className="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 cached {new Date(cachedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </Badge>
             )}
           </CardTitle>
-          <Button onClick={run} disabled={loading} className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white border-0 shadow-lg shadow-violet-500/25">
-            {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-            {loading ? "Scanning…" : result ? "Re-scan the tape" : "Scan the market"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Trade window">
+              {(["3-5", "7-14"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => setHorizonMode(m)}
+                  disabled={loading}
+                  className={cn(
+                    "px-2.5 py-1.5 font-medium transition-colors",
+                    horizonMode === m
+                      ? "bg-violet-600 text-white"
+                      : "bg-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {m === "3-5" ? "3–5d" : "7–14d"}
+                </button>
+              ))}
+            </div>
+            <Button onClick={run} disabled={loading} className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white border-0 shadow-lg shadow-violet-500/25">
+              {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              {loading ? "Scanning…" : result ? "Re-scan the tape" : "Scan the market"}
+            </Button>
+          </div>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
           Claude live-searches S&amp;P 500 momentum, catalysts and earnings dates, scores the tape, and hands its expected-move estimates to an on-device Monte Carlo simulator. On-demand only — one click, one capped API call.
