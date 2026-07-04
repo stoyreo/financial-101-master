@@ -6,27 +6,24 @@ import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, NumberInput, Label,
   Select, Textarea, Switch, Separator, StatCard, PageHeader, Badge, Alert
 } from "@/components/ui";
-import { User, Calendar, Target, Shield, Save, RefreshCw, AlertTriangle, CheckCircle, MessageCircle, Send, Eye, EyeOff } from "lucide-react";
+import { User, Calendar, Target, Shield, Save, RefreshCw, AlertTriangle, CheckCircle, MessageCircle, Send } from "lucide-react";
 import { TouchIDButton } from "@/components/TouchIDButton";
-import { getSession } from "@/lib/auth-client";
-import { getLINENotifyToken, setLINENotifyToken, sendLINENotify } from "@/lib/line-notify";
+import { sendLinePush } from "@/lib/line-notify";
+
+// LINE add-friend link for the Messaging API bot (set after the bot is created).
+// e.g. https://line.me/R/ti/p/@your-basic-id
+const LINE_ADD_FRIEND_URL = process.env.NEXT_PUBLIC_LINE_ADD_FRIEND_URL ?? "";
 
 export default function ProfilePage() {
-  const { profile, setProfile } = useStore();
+  const { profile, setProfile, lineUserId } = useStore();
   const [form, setForm] = useState({ ...profile });
   const [saved, setSaved] = useState(false);
   const [passkeyMsg, setPasskeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  // LINE Notify state
-  const session = getSession();
-  const [lineToken, setLineToken] = useState("");
-  const [showToken, setShowToken] = useState(false);
+  // LINE alerts (Messaging API) state
   const [lineMsg, setLineMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [lineTesting, setLineTesting] = useState(false);
-
-  useEffect(() => {
-    if (session?.userId) setLineToken(getLINENotifyToken(session.userId));
-  }, [session?.userId]);
+  const lineConnected = !!lineUserId;
 
   const age = calcAge(form.dateOfBirth);
   const yearsToRetirement = Math.max(0, form.retirementAge - age);
@@ -40,20 +37,17 @@ export default function ProfilePage() {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const handleSaveLineToken = () => {
-    if (!session?.userId) return;
-    setLINENotifyToken(session.userId, lineToken.trim());
-    setLineMsg({ ok: true, text: "Token saved." });
-    setTimeout(() => setLineMsg(null), 3000);
-  };
-
   const handleTestLine = async () => {
-    if (!lineToken.trim()) return;
+    if (!lineConnected) {
+      setLineMsg({ ok: false, text: "Sign in with LINE first, then add the bot as a friend." });
+      setTimeout(() => setLineMsg(null), 5000);
+      return;
+    }
     setLineTesting(true);
-    const ok = await sendLINENotify(lineToken.trim(), "\u{1F4B0} Financial 101 Master: LINE Notify is connected!");
+    const ok = await sendLinePush("\u{1F4B0} Financial 101 Master: LINE alerts are connected!");
     setLineMsg(ok
       ? { ok: true, text: "Test message sent to LINE." }
-      : { ok: false, text: "Failed. Check your token and try again." });
+      : { ok: false, text: "Failed. Make sure you've added the bot as a friend, then try again." });
     setLineTesting(false);
     setTimeout(() => setLineMsg(null), 5000);
   };
@@ -264,63 +258,59 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {/* LINE Notify */}
+        {/* LINE Alerts (Messaging API) */}
         <Card>
           <CardHeader>
             <CardTitle className="text-sm flex items-center gap-2">
-              <MessageCircle size={15} className="text-green-500" /> LINE Notify
+              <MessageCircle size={15} className="text-green-500" /> LINE Alerts
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              Get budget alerts, debt payoff milestones, and backup notifications in LINE.{" "}
-              <a
-                href="https://notify-bot.line.me/my/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline"
-              >
-                Get your token here ↗
-              </a>
+              Get budget alerts, debt payoff milestones, and backup notifications in LINE.
+              Alerts are sent through our LINE Official Account — no token needed.
             </p>
-            <div className="space-y-2">
-              <Label htmlFor="lineToken">LINE Notify Token</Label>
-              <div className="relative">
-                <Input
-                  id="lineToken"
-                  type={showToken ? "text" : "password"}
-                  value={lineToken}
-                  onChange={(e) => setLineToken(e.target.value)}
-                  placeholder="Paste your token here…"
-                  className="pr-10 mt-1 font-mono text-xs"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowToken(v => !v)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
+
+            <div className="flex items-center gap-2 text-xs">
+              <span className={`inline-flex h-2 w-2 rounded-full ${lineConnected ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+              <span className={lineConnected ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground"}>
+                {lineConnected ? "LINE account connected" : "Not connected — sign in with LINE"}
+              </span>
             </div>
+
             {lineMsg && (
               <div className={`text-xs rounded-lg px-3 py-2 ${lineMsg.ok ? "text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400" : "text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400"}`}>
                 {lineMsg.text}
               </div>
             )}
+
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="flex-1" onClick={handleSaveLineToken}>
-                <Save size={13} /> Save Token
-              </Button>
-              <Button size="sm" className="flex-1" onClick={handleTestLine} disabled={lineTesting || !lineToken.trim()}>
+              {LINE_ADD_FRIEND_URL ? (
+                <a
+                  href={LINE_ADD_FRIEND_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1"
+                >
+                  <Button size="sm" variant="outline" className="w-full">
+                    <MessageCircle size={13} /> Add bot as friend
+                  </Button>
+                </a>
+              ) : (
+                <Button size="sm" variant="outline" className="flex-1" disabled>
+                  <MessageCircle size={13} /> Add bot as friend
+                </Button>
+              )}
+              <Button size="sm" className="flex-1" onClick={handleTestLine} disabled={lineTesting || !lineConnected}>
                 <Send size={13} /> {lineTesting ? "Sending…" : "Send Test"}
               </Button>
             </div>
+
             <div className="text-[11px] text-muted-foreground bg-muted rounded-lg p-2 space-y-0.5">
               <div className="font-medium">Setup steps:</div>
-              <div>1. Visit <span className="font-mono">notify-bot.line.me/my</span></div>
-              <div>2. Issue a token → choose &quot;1-on-1 chat with LINE Notify&quot;</div>
-              <div>3. Paste the token above and Save</div>
+              <div>1. Sign in with LINE (so we know where to send alerts)</div>
+              <div>2. Tap &quot;Add bot as friend&quot; and add our Official Account</div>
+              <div>3. Tap &quot;Send Test&quot; to confirm it works</div>
             </div>
           </CardContent>
         </Card>
