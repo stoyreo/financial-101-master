@@ -1,14 +1,35 @@
 /**
- * LINE Notify utility
- * Sends a message to the user's LINE Notify token.
- * Tokens are stored per-user in sessionStorage (client) and sent
- * to the server via the /api/line/notify route for the actual POST.
+ * LINE push utility (client side).
+ *
+ * ⚠️ LINE Notify was DISCONTINUED 2025-03-31. /api/line/notify now pushes via
+ * the LINE Messaging API using the server's LINE_CHANNEL_ACCESS_TOKEN and the
+ * user's lineUserId (captured at LINE Login). The legacy per-user Notify token
+ * helpers below are kept only so the old settings UI keeps compiling — the
+ * token is no longer sent anywhere.
  */
 
 const LINE_NOTIFY_TOKEN_KEY = "line_notify_token";
 
-// ── Client helpers ────────────────────────────────────────────────────────────
+// ── Messaging API push (current) ─────────────────────────────────────────────
 
+/**
+ * Push a LINE message to the current user. If lineUserId is omitted, the
+ * server resolves it from the Supabase session metadata (LINE Login users).
+ */
+export async function sendLinePush(message: string, lineUserId?: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/line/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, lineUserId }),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
+// ── Legacy Notify-token helpers (deprecated, service discontinued) ───────────
+
+/** @deprecated LINE Notify is discontinued; tokens are unused. */
 export function getLINENotifyToken(userId: string): string {
   if (typeof window === "undefined") return "";
   try {
@@ -16,6 +37,7 @@ export function getLINENotifyToken(userId: string): string {
   } catch { return ""; }
 }
 
+/** @deprecated LINE Notify is discontinued; tokens are unused. */
 export function setLINENotifyToken(userId: string, token: string): void {
   if (typeof window === "undefined") return;
   try {
@@ -27,21 +49,13 @@ export function setLINENotifyToken(userId: string, token: string): void {
   } catch { /* ignore */ }
 }
 
-export async function sendLINENotify(token: string, message: string): Promise<boolean> {
-  if (!token) return false;
-  try {
-    const res = await fetch("/api/line/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token, message }),
-    });
-    return res.ok;
-  } catch { return false; }
+/** @deprecated Notify token is ignored; this now pushes via the Messaging API. */
+export async function sendLINENotify(_token: string, message: string): Promise<boolean> {
+  return sendLinePush(message);
 }
 
 // ── Event helpers (called from app logic) ────────────────────────────────────
 
-export async function notifyLINE(userId: string, message: string): Promise<void> {
-  const token = getLINENotifyToken(userId);
-  if (token) await sendLINENotify(token, message);
+export async function notifyLINE(_userId: string, message: string): Promise<void> {
+  await sendLinePush(message);
 }

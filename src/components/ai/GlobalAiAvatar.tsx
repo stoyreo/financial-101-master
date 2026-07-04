@@ -169,7 +169,7 @@ export default function GlobalAiAvatar() {
           className="flex items-center gap-2 rounded-full pl-3 pr-4 py-2.5 shadow-lg transition-transform hover:scale-105"
           style={{
             position: "fixed",
-            right: 20,
+            left: 20,
             bottom: 20,
             zIndex: 71,
             background: "linear-gradient(135deg,#2563eb,#1d4ed8)",
@@ -188,12 +188,12 @@ export default function GlobalAiAvatar() {
         <div
           style={{
             position: "fixed",
-            right: 20,
+            left: 20,
             bottom: 20,
             zIndex: 71,
             display: "flex",
             flexDirection: "column",
-            alignItems: "flex-end",
+            alignItems: "flex-start",
             gap: 8,
             maxHeight: "calc(100vh - 40px)",
             width: 360,

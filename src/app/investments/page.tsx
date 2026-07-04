@@ -18,6 +18,9 @@ import { ScenarioSimulator } from "./_components/ScenarioSimulator";
 import { FundForecastCard } from "./_components/FundForecastCard";
 import { AIRecommendationCard } from "./_components/AIRecommendationCard";
 import { DCASimulatorCard } from "./_components/DCASimulatorCard";
+import { ShortTermAIRadar } from "./_components/ShortTermAIRadar";
+import { WatchlistCard } from "./_components/WatchlistCard";
+import { ScorecardCard } from "./_components/ScorecardCard";
 
 const ACCOUNT_TYPES: AccountType[] = ["PVD", "RMF", "SSF", "SSO", "brokerage", "savings", "crypto", "other"];
 const COLORS = ["#3b82f6","#10b981","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#f97316","#84cc16"];
@@ -334,6 +337,15 @@ export default function InvestmentsPage() {
         subtitle="Track PVD, RMF, stocks, savings, and all investment accounts"
         actions={<Button size="sm" onClick={openAdd}><Plus size={14} /> Add Account</Button>}
       />
+
+      {/* ── AI Short-Term Radar — 7–14 day US stock scanner + simulation gauge ── */}
+      <ShortTermAIRadar userId={userId} riskProfile={profile?.riskProfile} />
+
+      {/* ── Short-term watchlist — pinned radar picks + on-demand price refresh ── */}
+      <WatchlistCard userId={userId} />
+
+      {/* ── Radar scorecard — grades matured scans against actual price moves ── */}
+      <ScorecardCard />
 
       {/* ── AI Recommendation (on-demand, web-researched) ─────────────────────── */}
       <AIRecommendationCard
