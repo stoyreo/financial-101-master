@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { aiComplete, extractJson } from "@/lib/ai-provider";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -58,6 +59,9 @@ const FALLBACK_VECTORS = {
 
 export async function POST(req: Request) {
   try {
+    const guard = await requireAiUser(req);
+    if (!guard.ok) return guard.response;
+
     const today = new Date().toISOString().slice(0, 10);
 
     const userPrompt = `Today is ${today}. Generate Bull/Bear/Recession return-shift vectors for a Thai retail investor

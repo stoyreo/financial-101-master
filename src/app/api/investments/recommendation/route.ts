@@ -22,6 +22,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { extractJson } from "@/lib/ai-provider";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -85,6 +86,9 @@ type PlanAccount = {
 };
 
 export async function POST(req: Request) {
+  const guard = await requireAiUser(req);
+  if (!guard.ok) return guard.response;
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return err(

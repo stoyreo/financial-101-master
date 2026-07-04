@@ -34,6 +34,7 @@
  */
 
 import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -122,6 +123,9 @@ function jsonError(status: number, reason: string, message: string) {
 }
 
 export async function POST(req: Request) {
+  const guard = await requireAiUser(req);
+  if (!guard.ok) return guard.response;
+
   let body: any;
   try {
     body = await req.json();

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,6 +27,9 @@ JSON schema (return EXACTLY these keys):
 
 export async function POST(req: Request) {
   try {
+    const guard = await requireAiUser(req);
+    if (!guard.ok) return guard.response;
+
     const { mediaType, data } = await req.json() as { mediaType: string; data: string };
     if (!data) return NextResponse.json({ error: "no_data" }, { status: 400 });
 

@@ -4,10 +4,14 @@
  *
  * Users can ONLY access their own storageKey (derived from their user record).
  * The client cannot specify arbitrary storageKeys — we enforce this server-side.
+ *
+ * Authentication itself (Supabase session cookie, or signed fp_storage_key
+ * cookie) now lives in src/lib/server-auth.ts so every route shares the same
+ * logic instead of each maintaining its own copy.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin, rowToAppUser } from "@/lib/supabase/admin";
-import { getSupabaseServer } from "@/lib/supabase/server";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { getAuthenticatedUserStorageKey } from "@/lib/server-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,90 +20,12 @@ function sanitizeStorageKey(key: string): string | null {
   return key && /^[A-Za-z0-9_-]+$/.test(key) ? key : null;
 }
 
-/**
- * Get the authenticated user's storageKey from their AppUser record.
- * Verifies the user exists and is active.
- * Returns { ok: true, storageKey, userId } or { ok: false, error }.
- */
-async function getAuthenticatedUserStorageKey(req: NextRequest) {
-  try {
-    // ── Path A: Supabase session cookie (email/password, Google OAuth) ─────
-    const supabase = getSupabaseServer();
-    const {
-      data: { user: supabaseUser },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (!authError && supabaseUser) {
-      const adminDb = getSupabaseAdmin();
-      const { data: userRows, error: queryError } = await adminDb
-        .from("app_users")
-        .select("*")
-        .eq("email", supabaseUser.email?.toLowerCase() || "")
-        .maybeSingle();
-
-      if (queryError) {
-        console.error("[getAuthenticatedUserStorageKey] Supabase path query error:", queryError.message);
-        return { ok: false, error: `database error: ${queryError.message}` };
-      }
-      if (!userRows) {
-        // Fallback: look up by supabase_user_id (handles email mismatch,
-        // e.g. toy.theeranan@gmail.com auth vs toy.theeranan@icloud.com row)
-        const { data: byUid } = await adminDb
-          .from("app_users").select("*")
-          .eq("supabase_user_id", supabaseUser.id).maybeSingle();
-        if (byUid) {
-          const appUser = rowToAppUser(byUid as any);
-          if (!appUser.isActive) return { ok: false, error: "unauthorized: inactive" };
-          return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
-        }
-        console.warn("[getAuthenticatedUserStorageKey] Not found:", supabaseUser.email);
-        return { ok: false, error: "unauthorized: user not found in app registry" };
-      }
-      const appUser = rowToAppUser(userRows as any);
-      if (!appUser.isActive) {
-        return { ok: false, error: "unauthorized: user account is inactive" };
-      }
-      return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
-    }
-
-    // ── Path B: fp_storage_key cookie (LINE login, other non-Supabase auth) ─
-    // synthesizeSession writes this cookie alongside fp_session_exists.
-    // We verify the storageKey exists and is active in app_users before trusting it.
-    const rawStorageKey = req.cookies.get("fp_storage_key")?.value;
-    if (rawStorageKey) {
-      const storageKey = decodeURIComponent(rawStorageKey);
-      if (/^[A-Za-z0-9_-]+$/.test(storageKey)) {
-        const adminDb = getSupabaseAdmin();
-        const { data: userRows, error: queryError } = await adminDb
-          .from("app_users")
-          .select("*")
-          .eq("storage_key", storageKey)
-          .maybeSingle();
-
-        if (!queryError && userRows) {
-          const appUser = rowToAppUser(userRows as any);
-          if (appUser.isActive) {
-            return { ok: true, storageKey: appUser.storageKey, userId: appUser.id };
-          }
-        }
-      }
-    }
-
-    console.warn("[getAuthenticatedUserStorageKey] Auth failed — no Supabase session and no valid fp_storage_key cookie");
-    return { ok: false, error: "unauthorized: not authenticated" };
-  } catch (err: any) {
-    console.error("[getAuthenticatedUserStorageKey] Error:", err);
-    return { ok: false, error: `error: ${String(err?.message ?? err)}` };
-  }
-}
-
 export async function POST(req: NextRequest) {
   try {
     // ── Step 1: Authenticate the user ──────────────────────────
-    const authResult = await getAuthenticatedUserStorageKey(req);
+    const authResult = await getAuthenticatedUserStorageKey();
     if (!authResult.ok) {
-      return NextResponse.json({ ok: false, error: authResult.error }, { status: 401 });
+      return NextResponse.json({ ok: false, error: authResult.error }, { status: authResult.status });
     }
 
     const { storageKey: allowedStorageKey, userId } = authResult;
@@ -155,9 +81,9 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     // ── Step 1: Authenticate the user ──────────────────────────
-    const authResult = await getAuthenticatedUserStorageKey(req);
+    const authResult = await getAuthenticatedUserStorageKey();
     if (!authResult.ok) {
-      return NextResponse.json({ ok: false, error: authResult.error }, { status: 401 });
+      return NextResponse.json({ ok: false, error: authResult.error }, { status: authResult.status });
     }
 
     const { storageKey: allowedStorageKey, userId } = authResult;

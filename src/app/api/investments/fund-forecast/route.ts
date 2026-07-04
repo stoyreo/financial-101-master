@@ -32,6 +32,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiComplete, extractJson } from "@/lib/ai-provider";
 import { fundSummaryForPrompt, type FundInfo, type AssetClass } from "@/lib/fund-registry";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 45;
@@ -129,6 +130,9 @@ export async function POST(req: NextRequest) {
   let fund: FundInfo | undefined;
 
   try {
+    const guard = await requireAiUser(req);
+    if (!guard.ok) return guard.response;
+
     const body = await req.json();
     fund = body?.fund as FundInfo | undefined;
   } catch {

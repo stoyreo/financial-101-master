@@ -12,6 +12,7 @@
  */
 
 import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -30,6 +31,9 @@ function aiUnavailable(reason: string, message: string, status: number) {
 
 export async function POST(req: Request) {
   try {
+    const guard = await requireAiUser(req);
+    if (!guard.ok) return guard.response;
+
     const body = await req.json();
     const {
       horizonYears = 20,

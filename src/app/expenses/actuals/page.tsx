@@ -130,22 +130,24 @@ function ActualsPageInner() {
 
   // ── Persist LINE UID to localStorage forever (backup beyond Zustand) ──────
   // Ensures the credential survives store resets, cache clears, etc.
-  // Key is scoped by userId so different users never share LINE credentials.
+  // 🔐 Key is ALWAYS scoped by account.id so different users never share LINE
+  // credentials. Never use an unscoped fallback key — skip the write entirely
+  // when there's no account, so one user's UID can't leak to another on the
+  // same browser.
   useEffect(() => {
-    if (lineUserId) {
-      const lineKey = account?.id ? `line_uid_persistent:${account.id}` : "line_uid_persistent";
-      localStorage.setItem(lineKey, lineUserId);
+    if (lineUserId && account?.id) {
+      localStorage.setItem(`line_uid_persistent:${account.id}`, lineUserId);
     }
   }, [lineUserId, account?.id]);
 
-  // On mount: restore UID from localStorage if the Zustand store is empty
+  // Restore UID from localStorage if the Zustand store is empty. Runs once the
+  // account is known (account?.id in deps) — never reads an unscoped key.
   useEffect(() => {
-    if (!lineUserId) {
-      const lineKey = account?.id ? `line_uid_persistent:${account.id}` : "line_uid_persistent";
-      const stored = localStorage.getItem(lineKey);
+    if (!lineUserId && account?.id) {
+      const stored = localStorage.getItem(`line_uid_persistent:${account.id}`);
       if (stored) setLineUserId(stored);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [account?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-start LINE sync when page opens and LINE is connected ─────────────
   // Fires on mount (if already connected) or right after localStorage restore

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import {
   addUser,
   getUsers,
-  getUserById,
   removeUser,
   updateUser,
   saveUsers,
@@ -16,7 +15,7 @@ import {
   type UserRole,
 } from "@/lib/users";
 import { useStore } from "@/lib/store";
-import { changePassword, isAdmin } from "@/lib/auth-client";
+import { isAdmin } from "@/lib/auth-client";
 import { UserPlus, KeyRound, UserX, UserCheck, Trash2, X, RefreshCw } from "lucide-react";
 
 type DialogKind = "add" | "password" | "remove" | null;
@@ -170,33 +169,20 @@ export default function AdminUsersPage() {
     }
     setBusy(true);
     try {
-      // Local update — changePassword writes hash into the localStorage registry
-      setLocalSyncStatus("saving");
-      await changePassword(targetUser.id, newPassword);
-      setLocalSyncStatus("completed");
-
-      // Push the new hash to the server registry AND update the Supabase
-      // Auth password. The plaintext newPassword is what actually matters —
-      // signInWithPassword() validates against auth.users, not the
-      // app_users.password_hash column. If we skip the password parameter
-      // here, the user will keep getting "Invalid login credentials" with
-      // the new password.
-      const updated = getUserById(targetUser.id);
-      if (updated) {
-        setRemoteSyncStatus("saving");
-        const remote = await syncUpdateUserRemote(
-          targetUser.id,
-          { passwordHash: updated.passwordHash },
-          newPassword,
-        );
-        if (!remote.ok) {
-          setRemoteSyncStatus("error", `Password sync failed: ${remote.error}`);
-          flash("err", `Local password reset but remote sync failed: ${remote.error}`);
-          setBusy(false);
-          return;
-        }
-        setRemoteSyncStatus("completed");
+      // 🔐 SECURITY FIX (2026-07-02): No local passwordHash write anymore —
+      // that field was never checked at login (see users.ts docblock). The
+      // ONLY thing that actually resets the user's credential is the
+      // Supabase Auth update below: signInWithPassword() validates against
+      // auth.users, not app_users.password_hash.
+      setRemoteSyncStatus("saving");
+      const remote = await syncUpdateUserRemote(targetUser.id, {}, newPassword);
+      if (!remote.ok) {
+        setRemoteSyncStatus("error", `Password reset failed: ${remote.error}`);
+        flash("err", `Password reset failed: ${remote.error}`);
+        setBusy(false);
+        return;
       }
+      setRemoteSyncStatus("completed");
 
       flash("ok", `Password reset for ${targetUser.email}`);
       closeDialog();

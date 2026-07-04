@@ -55,14 +55,20 @@ export function synthesizeSession(user: AppUser, _extras?: Record<string, unknow
   try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch {}
 }
 
-export async function changePassword(userId: string, newPassword: string): Promise<boolean> {
-  try {
-    const { updateUser } = await import("./users");
-    const { sha256 } = await import("./crypto");
-    const hash = await sha256(newPassword);
-    updateUser(userId, { passwordHash: hash });
-    return true;
-  } catch { return false; }
+/**
+ * 🔐 SECURITY FIX (2026-07-02): This used to hash the new password with
+ * unsalted SHA-256 and write it to the (unused) local passwordHash field —
+ * it never actually changed the user's real login credential. Real password
+ * changes go through Supabase Auth via PATCH /api/admin/users (see
+ * syncUpdateUserRemote in ./users), which calls
+ * supabase.auth.admin.updateUserById(). Use that instead of this function.
+ */
+export async function changePassword(): Promise<boolean> {
+  console.warn(
+    "[changePassword] deprecated no-op — use syncUpdateUserRemote(id, patch, newPassword) " +
+      "to actually change a Supabase Auth password.",
+  );
+  return false;
 }
 
 export async function ensureAppUserFromSupabase(

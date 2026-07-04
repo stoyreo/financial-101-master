@@ -2,8 +2,16 @@
  * MULTI-USER REGISTRY
  * Stored in localStorage under USERS_KEY.
  * Admin (toy) can manage accounts from /accounts page.
+ *
+ * 🔐 SECURITY FIX (2026-07-02): Removed the legacy unsalted-SHA-256
+ * password_hash path. Real login goes entirely through Supabase Auth
+ * (supabase.auth.signInWithPassword / admin.createUser / admin.updateUserById
+ * in /api/admin/users) — password_hash was write-only and never checked
+ * anywhere at login, so hashing it here provided no security benefit and
+ * left a weak, unsalted hash sitting in the app_users table for no reason.
+ * AppUser.passwordHash is kept as a field (existing DB rows still have the
+ * column) but is no longer populated with a real hash — it is always "".
  */
-import { sha256 } from "./crypto";
 import { seedProfile, seedIncomes, seedExpenses, seedDebts, seedInvestments, seedRetirement, seedTax, seedScenarios } from "./seed";
 import { toyRealData, looksLikeDemoData } from "./toyRealData";
 
@@ -138,14 +146,16 @@ export async function addUser(input: {
 
   const id = `user_${username.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${Date.now().toString(36)}`;
   const storageKey = `fp_data_${id}`; // 🔐 Use unique ID, not username (prevents collisions)
-  const passwordHash = await sha256(input.password);
 
   const newUser: AppUser = {
     id,
     username,
     email,
     displayName,
-    passwordHash,
+    // Not used for auth — see module docblock. Real login is provisioned via
+    // syncAddUserRemote() -> /api/admin/users, which creates a Supabase Auth
+    // user from input.password directly (never hashed/stored here).
+    passwordHash: "",
     role: input.role,
     dataMode: input.role === "demo" ? "demo" : "own",
     storageKey,

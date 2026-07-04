@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { sha256 } from "@/lib/crypto";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { getUsers, saveUsers, updateUser, getStartingSnapshot,
   persistUserData, type AppUser } from "@/lib/users";
@@ -48,8 +47,11 @@ export default function AccountsPage() {
     if (newPass) {
       if (newPass !== newPass2) { flash("Passwords don't match.", "danger"); return; }
       if (newPass.length < 8) { flash("Password must be at least 8 characters.", "danger"); return; }
-      const hash = await sha256(newPass);
-      updateUser(editUser.id, { ...editUser, passwordHash: hash });
+      // 🔐 SECURITY FIX (2026-07-02): no more local SHA-256 hashing — it was
+      // never checked at login. Real password changes must go through
+      // /api/admin/users (Supabase Auth), not this legacy local page.
+      flash("Password changes must be done from Admin → Users (Supabase Auth).", "danger");
+      return;
     } else {
       updateUser(editUser.id, editUser);
     }
@@ -77,7 +79,9 @@ export default function AccountsPage() {
     if (!createEmail.trim()) { flash("Email required.", "danger"); return; }
     if (createPass.length < 8) { flash("Password min 8 characters.", "danger"); return; }
 
-    const hash = await sha256(createPass);
+    // 🔐 SECURITY FIX (2026-07-02): no more local SHA-256 hashing — see
+    // users.ts docblock. passwordHash is never checked at login; real
+    // provisioning happens via /api/admin/users (Supabase Auth).
     const newUserId = createName.toLowerCase().replace(/\s+/g, "-");
     const username = createEmail.split("@")[0];
     const newUser: AppUser = {
@@ -85,7 +89,7 @@ export default function AccountsPage() {
       username,
       displayName: createName,
       email: createEmail,
-      passwordHash: hash,
+      passwordHash: "",
       role: "member",
       isActive: true,
       dataMode: "own",

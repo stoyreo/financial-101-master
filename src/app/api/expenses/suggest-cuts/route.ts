@@ -27,6 +27,7 @@
 
 import { NextResponse } from "next/server";
 import { aiComplete, AiUnavailableError, extractJson } from "@/lib/ai-provider";
+import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -60,6 +61,9 @@ const SCHEMA = `{
 
 export async function POST(req: Request) {
   try {
+    const guard = await requireAiUser(req);
+    if (!guard.ok) return guard.response;
+
     const body = await req.json();
     const {
       monthlyIncome = 0,
