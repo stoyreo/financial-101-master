@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   Calculator, TrendingUp, Info, Save, Trash2, Sparkles, Loader2, AlertTriangle, FolderOpen,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, History, Radar, Plus, X, ExternalLink,
 } from "lucide-react";
 import {
   Card, CardHeader, CardTitle, CardContent, NumberInput, Select, Label, Badge, Button, Input,
@@ -20,6 +20,14 @@ import { TokenUsageStamp } from "./TokenUsageStamp";
 import {
   type DCAScenario, loadDCAScenarios, addDCAScenario, removeDCAScenario,
 } from "./dca-scenarios";
+import {
+  type RMFScan, loadRMFScans, addRMFScan, removeRMFScan, RMF_SCAN_EVENT,
+} from "./rmf-scan-history";
+import {
+  type RadarFund, loadRadar, addToRadar, removeFromRadar, isOnRadar, isValidCode,
+  RMF_RADAR_EVENT,
+} from "./rmf-radar";
+import { brokerLinkForFund, BROKER_DIRECTORY } from "./thai-broker-links";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -100,6 +108,18 @@ function YearAgeTick({ x, y, payload, birthYear }: any) {
   );
 }
 
+// Compact "when did this scan run" label for the recent-scans list.
+function scanTimeLabel(iso: string): string {
+  const d = new Date(iso);
+  const ms = Date.now() - d.getTime();
+  const mins = Math.round(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }: Props) {
@@ -141,6 +161,61 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
   // backend failure. Never blocks the funds from displaying.
   const [aiFundsCaveat, setAiFundsCaveat] = useState<string | null>(null);
 
+  // ── Recent scans (traceable history) + RMF radar (type-to-add watchlist) ────
+  const scanUserId = userIdProp || getSession()?.userId || "";
+  const [recentScans, setRecentScans] = useState<RMFScan[]>([]);
+  const [showAllScans, setShowAllScans] = useState(false);
+  const [radar, setRadar] = useState<RadarFund[]>([]);
+  const [radarInput, setRadarInput] = useState("");
+  const [radarMsg, setRadarMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!scanUserId) return;
+    const syncScans = () => setRecentScans(loadRMFScans(scanUserId));
+    const syncRadar = () => setRadar(loadRadar(scanUserId));
+    syncScans();
+    syncRadar();
+    window.addEventListener(RMF_SCAN_EVENT, syncScans);
+    window.addEventListener(RMF_RADAR_EVENT, syncRadar);
+    return () => {
+      window.removeEventListener(RMF_SCAN_EVENT, syncScans);
+      window.removeEventListener(RMF_RADAR_EVENT, syncRadar);
+    };
+  }, [scanUserId]);
+
+  const handleAddRadar = (code: string, meta?: Partial<RadarFund>) => {
+    if (!scanUserId) return;
+    const res = addToRadar(scanUserId, code, meta);
+    if (res.ok) {
+      setRadarMsg(null);
+      setRadarInput("");
+    } else {
+      setRadarMsg(
+        res.reason === "duplicate" ? `${code.toUpperCase()} is already on your radar.`
+        : res.reason === "full" ? "Radar is full — remove a fund first."
+        : "Enter a valid fund code (e.g. DAOL-GOLDRMF).",
+      );
+    }
+  };
+
+  const handleTypedAdd = () => {
+    const code = radarInput;
+    if (!code.trim()) return;
+    handleAddRadar(code, { source: "typed" });
+  };
+
+  // Reload a past scan's ranking back into the card, exactly as it was captured.
+  const handleReloadScan = (s: RMFScan) => {
+    setAiFunds(s.funds.map(f => ({ ...f })));
+    setAiFundsAsOf(s.asOf);
+    setAiFundsSources(s.sources);
+    setAiFundsCaveat(s.caveat);
+    setAiFundsStatus("done");
+    setAiFundsError(null);
+    const top = s.funds.find(f => f.rank === 1) ?? s.funds[0];
+    if (top) setFundChoice(`ai:${top.code}`);
+  };
+
   const fetchTopRMFFunds = async () => {
     setAiFundsStatus("loading");
     setAiFundsError(null);
@@ -177,6 +252,23 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
           .join(" ") || null,
       );
       setAiFundsStatus("done");
+      // Persist this scan to the traceable history so the user can reopen it
+      // later — a full snapshot (top-5 + as-of + freshness caveat), not just a
+      // timestamp. sessionStorage, per-user (see rmf-scan-history.ts).
+      if (scanUserId) {
+        addRMFScan(scanUserId, {
+          id: `${Date.now()}`,
+          scannedAt: new Date().toISOString(),
+          asOf: data.asOf ?? null,
+          returnPeriod: data.returnPeriod ?? null,
+          caveat: data.dataFreshnessNote ?? null,
+          funds: funds.map(f => ({
+            rank: f.rank, code: f.code, name: f.name, manager: f.manager,
+            yoyReturnPct: f.yoyReturnPct, riskLevel: f.riskLevel, note: f.note,
+          })),
+          sources: data.sources ?? [],
+        });
+      }
       // Auto-select the #1-ranked fund into the Fund/Return Basis dropdown —
       // the user asked for the AI result to populate the dropdown automatically
       // rather than requiring a manual pick after researching.
@@ -423,6 +515,152 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
           </div>
         )}
 
+        {/* ── Recent scans (traceable history) ───────────────────────────── */}
+        {recentScans.length > 0 && (
+          <div className="rounded-lg border border-border overflow-hidden">
+            <div className="bg-muted/40 px-3 py-2 text-xs font-medium flex items-center gap-1.5">
+              <History size={12} className="text-blue-500" />
+              Recent scans
+              <span className="text-muted-foreground font-normal">({recentScans.length})</span>
+              <InfoTooltip content="Every AI scan you run is saved here for this session so you can trace what was ranked when. Click a scan to reload its full ranking back into the card." />
+            </div>
+            <div className="divide-y divide-border/50">
+              {(showAllScans ? recentScans : recentScans.slice(0, 3)).map(s => {
+                const top = s.funds.find(f => f.rank === 1) ?? s.funds[0];
+                return (
+                  <div key={s.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs hover:bg-muted/30 transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => handleReloadScan(s)}
+                      className="flex items-center gap-2 min-w-0 text-left"
+                      title="Reload this scan's ranking"
+                    >
+                      <span className="text-muted-foreground shrink-0 tabular-nums">{scanTimeLabel(s.scannedAt)}</span>
+                      {top && (
+                        <span className="font-medium truncate">
+                          #1 {top.code} · {pct(top.yoyReturnPct / 100)}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground shrink-0">
+                        {s.funds.length} funds{s.asOf ? ` · as of ${s.asOf}` : ""}
+                      </span>
+                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleReloadScan(s)}
+                        className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                      >
+                        Reload
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRMFScan(scanUserId, s.id)}
+                        className="p-1 hover:bg-destructive/10 rounded-md"
+                        title="Remove this scan from history"
+                      >
+                        <Trash2 size={12} className="text-destructive" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {recentScans.length > 3 && (
+              <button
+                type="button"
+                onClick={() => setShowAllScans(v => !v)}
+                className="w-full px-3 py-1.5 text-xs text-blue-600 dark:text-blue-400 hover:bg-muted/30 border-t border-border/50"
+              >
+                {showAllScans ? "Show fewer" : `Show all ${recentScans.length}`}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── RMF Radar: type-to-add watchlist ───────────────────────────── */}
+        <div className="rounded-lg border border-violet-200 dark:border-violet-800/50 overflow-hidden">
+          <div className="bg-violet-50 dark:bg-violet-900/10 px-3 py-2 text-xs font-medium text-violet-800 dark:text-violet-300 flex items-center gap-1.5">
+            <Radar size={12} />
+            RMF Radar
+            <span className="text-violet-500/70 font-normal">({radar.length})</span>
+            <InfoTooltip content="Type any Thai RMF fund code to keep it on your radar, or add one straight from a scan row. Stored for this session, per-user." />
+          </div>
+          <div className="p-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Input
+                value={radarInput}
+                onChange={e => { setRadarInput(e.target.value); setRadarMsg(null); }}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleTypedAdd(); } }}
+                placeholder="Type a fund code, e.g. DAOL-GOLDRMF"
+                className="max-w-xs font-mono uppercase"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleTypedAdd}
+                disabled={!scanUserId || !radarInput.trim() || !isValidCode(radarInput)}
+              >
+                <Plus size={13} />
+                Add to radar
+              </Button>
+            </div>
+            {radarMsg && <p className="text-xs text-amber-600 dark:text-amber-400">{radarMsg}</p>}
+
+            {radar.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Nothing on your radar yet — type a fund code above, or hit “+ Radar” on any scan row below.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {radar.map(f => {
+                  const broker = brokerLinkForFund(f.code, f.manager);
+                  return (
+                    <div
+                      key={f.code}
+                      className="flex items-center gap-1.5 rounded-full border border-border bg-card pl-2.5 pr-1 py-1 text-xs"
+                    >
+                      <span className="font-mono font-semibold">{f.code}</span>
+                      {typeof f.yoyReturnPct === "number" && (
+                        <span className="text-muted-foreground tabular-nums">{pct(f.yoyReturnPct / 100)}</span>
+                      )}
+                      <a
+                        href={broker.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={broker.label}
+                        className="text-blue-600 dark:text-blue-400 hover:text-blue-700"
+                      >
+                        <ExternalLink size={12} />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => removeFromRadar(scanUserId, f.code)}
+                        className="p-0.5 rounded-full hover:bg-destructive/10"
+                        title={`Remove ${f.code} from radar`}
+                      >
+                        <X size={12} className="text-destructive" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-muted-foreground pt-1">
+              <span>Find a broker:</span>
+              {BROKER_DIRECTORY.map((b, i) => (
+                <Fragment key={b.url}>
+                  {i > 0 && <span>·</span>}
+                  <a href={b.url} target="_blank" rel="noreferrer" className="hover:underline text-blue-600 dark:text-blue-400">
+                    {b.label}
+                  </a>
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* ── Inputs ──────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div>
@@ -571,7 +809,47 @@ export function DCASimulatorCard({ userId: userIdProp, aiReturnByFundCode = {} }
                         <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
                           {f.riskLevel > 0 ? `${f.riskLevel}/8` : "—"}
                         </td>
-                        <td className="px-3 py-1.5 text-muted-foreground">{f.note}</td>
+                        <td className="px-3 py-1.5 text-muted-foreground">
+                          <div>{f.note}</div>
+                          <div className="mt-1 flex items-center gap-2.5">
+                            {(() => {
+                              const onRadar = scanUserId ? isOnRadar(scanUserId, f.code) : false;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => !onRadar && handleAddRadar(f.code, {
+                                    source: "scan", manager: f.manager, name: f.name,
+                                    yoyReturnPct: f.yoyReturnPct, riskLevel: f.riskLevel, note: f.note,
+                                  })}
+                                  disabled={onRadar}
+                                  className={cn(
+                                    "inline-flex items-center gap-0.5 font-medium",
+                                    onRadar ? "text-muted-foreground/60 cursor-default" : "text-violet-600 dark:text-violet-400 hover:underline",
+                                  )}
+                                  title={onRadar ? `${f.code} is on your radar` : `Add ${f.code} to your radar`}
+                                >
+                                  {onRadar ? <Radar size={11} /> : <Plus size={11} />}
+                                  {onRadar ? "On radar" : "Radar"}
+                                </button>
+                              );
+                            })()}
+                            {(() => {
+                              const broker = brokerLinkForFund(f.code, f.manager);
+                              return (
+                                <a
+                                  href={broker.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-0.5 text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                                  title={broker.label}
+                                >
+                                  <ExternalLink size={11} />
+                                  Where to buy
+                                </a>
+                              );
+                            })()}
+                          </div>
+                        </td>
                       </tr>
                       {isExpanded && f.riskBreakdown && (
                         <tr className="border-b border-border/50 last:border-0 bg-muted/20">

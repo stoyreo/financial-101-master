@@ -25,7 +25,7 @@
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { extractJson } from "@/lib/ai-provider";
+import { extractJson, repairJsonLenient } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -54,8 +54,14 @@ days, or momentum already in motion). Expected-move bands must be proportionally
 than a 2-week view, and confidence even more conservative — most ${horizonDays}-day moves
 are noise.` : ""}
 
-OUTPUT: After any searching, your FINAL message must be STRICT JSON only — no prose,
-no markdown fences, matching exactly this schema:
+WORKFLOW: First, use web_search (at most ${MAX_WEB_SEARCHES} searches) to gather what you need.
+Once you have enough grounding, your FINAL action must be exactly ONE call to the
+"submit_scan" tool with the complete result — do not call it more than once, and do not
+follow it with any further searching or text. If for any reason you cannot call
+"submit_scan", your final message must be STRICT JSON only (no prose, no markdown fences)
+matching the same schema, as a last resort.
+
+SCHEMA (used by both the submit_scan tool and the JSON fallback):
 {
   "asOf": string,                       // e.g. "2026-07-04"
   "horizonDays": number,                // echo the requested horizon
@@ -87,6 +93,76 @@ no markdown fences, matching exactly this schema:
   "watchouts": [ string ],              // 2-4 macro/market risks for the window
   "sources": [ { "title": string, "url": string } ]
 }`;
+
+// Structured "client tool" the model calls as its FINAL action instead of
+// emitting free-text JSON. Anthropic guarantees `input` conforms to this
+// JSON Schema, which eliminates the prose/markdown-fence/trailing-comma
+// failure modes that plague free-text JSON extraction. The schema mirrors
+// the one described in the system prompt above exactly.
+const SUBMIT_SCAN_TOOL = {
+  name: "submit_scan",
+  description:
+    "Submit the final short-term stock scan result. Call this exactly once, as your last action, after you have finished web_search research.",
+  input_schema: {
+    type: "object",
+    properties: {
+      asOf: { type: "string", description: 'e.g. "2026-07-04"' },
+      horizonDays: { type: "number", description: "echo the requested horizon" },
+      marketPulse: {
+        type: "object",
+        properties: {
+          score: { type: "number", description: "0-100: 0 = extremely bearish, 100 = extremely bullish" },
+          label: { type: "string", description: "<=3 words, e.g. 'Cautiously risk-on'" },
+          summary: { type: "string", description: "1-2 sentences on the current tape" },
+        },
+        required: ["score", "label", "summary"],
+      },
+      picks: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            ticker: { type: "string" },
+            company: { type: "string" },
+            sector: { type: "string" },
+            direction: { type: "string", description: '"long" | "avoid"' },
+            thesis: { type: "string" },
+            catalyst: { type: "string" },
+            catalystDate: { type: "string", description: "ISO date or empty string" },
+            confidence: { type: "number" },
+            expectedMovePct: {
+              type: "object",
+              properties: {
+                low: { type: "number" },
+                base: { type: "number" },
+                high: { type: "number" },
+              },
+              required: ["low", "base", "high"],
+            },
+            annualizedVolPct: { type: "number" },
+            riskLevel: { type: "string", description: '"low" | "medium" | "high"' },
+            riskNote: { type: "string" },
+          },
+          required: [
+            "ticker", "company", "sector", "direction", "thesis", "catalyst",
+            "catalystDate", "confidence", "expectedMovePct", "annualizedVolPct",
+            "riskLevel", "riskNote",
+          ],
+        },
+      },
+      watchouts: { type: "array", items: { type: "string" } },
+      sources: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { title: { type: "string" }, url: { type: "string" } },
+          required: ["title", "url"],
+        },
+      },
+    },
+    required: ["asOf", "horizonDays", "marketPulse", "picks", "watchouts", "sources"],
+  },
+} as const;
 
 function err(reason: string, message: string, status: number) {
   return NextResponse.json({ error: "ai_unavailable", reason, message }, { status });
@@ -120,45 +196,104 @@ Return STRICT JSON only as specified.`;
 
     const client = new Anthropic({ apiKey });
 
-    const msg = await client.messages.create({
-      model: MODEL,
-      // Headroom so the final JSON (pulse + 4-6 picks + sources) isn't
-      // truncated mid-object after web_search consumes context.
-      max_tokens: 4096,
-      system: systemPrompt(horizonDays),
-      messages: [{ role: "user", content: userPrompt }],
-      tools: [
-        {
-          type: "web_search_20250305",
-          name: "web_search",
-          max_uses: MAX_WEB_SEARCHES,
-        } as any,
-      ],
-    });
+    // One Anthropic attempt: web_search grounding + a structured `submit_scan`
+    // tool the model calls as its final action. Returns the parsed scan (or
+    // null) plus raw text, citations, usage, and stop_reason so the caller can
+    // retry / fall back / diagnose.
+    const attemptScan = async () => {
+      const msg = await client.messages.create({
+        model: MODEL,
+        // Headroom so the final result (pulse + 4-6 picks + sources) isn't
+        // truncated mid-object after web_search consumes context.
+        max_tokens: 8192,
+        system: systemPrompt(horizonDays),
+        messages: [{ role: "user", content: userPrompt }],
+        tools: [
+          {
+            type: "web_search_20250305",
+            name: "web_search",
+            max_uses: MAX_WEB_SEARCHES,
+          } as any,
+          SUBMIT_SCAN_TOOL as any,
+        ],
+        // NOTE: no tool_choice — the model must be free to web_search first,
+        // then call submit_scan as instructed by the system prompt.
+      });
 
-    // Concatenate all final text blocks (the model emits JSON in text after tool use).
-    const textOut = (msg.content as any[])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text as string)
-      .join("")
-      .trim();
+      const content = msg.content as any[];
 
-    // Collect citations attached by the web_search tool as a fallback source list.
-    const citationSources: { title: string; url: string }[] = [];
-    for (const b of msg.content as any[]) {
-      if (b.type === "text" && Array.isArray(b.citations)) {
-        for (const c of b.citations) {
-          if (c?.url) citationSources.push({ title: c.title || c.url, url: c.url });
+      // 1) PREFERRED: the model called submit_scan. Anthropic guarantees the
+      //    tool `input` conforms to the JSON schema, so no text parsing needed.
+      let parsed: any = null;
+      const submit = content.find(
+        (b) => b.type === "tool_use" && b.name === "submit_scan",
+      );
+      if (submit && submit.input && typeof submit.input === "object") {
+        parsed = submit.input;
+      }
+
+      // Concatenate any final text blocks (free-text JSON fallback + diagnostics).
+      const textOut = content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text as string)
+        .join("")
+        .trim();
+
+      // 2) FALLBACK: parse free-text JSON, repairing common model slips
+      //    (markdown fences, trailing commas, smart quotes) before giving up.
+      if (!parsed && textOut) {
+        const candidates = [extractJson(textOut), extractJson(repairJsonLenient(textOut))];
+        for (const candidate of candidates) {
+          try {
+            parsed = JSON.parse(candidate);
+            break;
+          } catch {
+            /* try the next candidate */
+          }
         }
       }
+
+      // Collect citations attached by web_search as a fallback source list.
+      const citationSources: { title: string; url: string }[] = [];
+      for (const b of content) {
+        if (b.type === "text" && Array.isArray(b.citations)) {
+          for (const c of b.citations) {
+            if (c?.url) citationSources.push({ title: c.title || c.url, url: c.url });
+          }
+        }
+      }
+
+      const usage = {
+        inputTokens: msg.usage?.input_tokens ?? null,
+        outputTokens: msg.usage?.output_tokens ?? null,
+        webSearches: (msg.usage as any)?.server_tool_use?.web_search_requests ?? 0,
+        model: MODEL,
+      };
+
+      return { parsed, citationSources, usage, textOut, stopReason: (msg as any)?.stop_reason ?? null };
+    };
+
+    const isUsable = (a: { parsed: any }) =>
+      a.parsed && typeof a.parsed === "object" && Array.isArray(a.parsed.picks) && a.parsed.picks.length > 0;
+
+    // Attempt once; auto-retry ONCE server-side before surfacing an error.
+    let attempt = await attemptScan();
+    if (!isUsable(attempt)) {
+      console.warn("short-term-picks: first attempt returned no usable scan; retrying once.", {
+        stopReason: attempt.stopReason,
+      });
+      attempt = await attemptScan();
     }
 
-    const jsonStr = extractJson(textOut);
-    let parsed: any;
-    try {
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      const truncated = (msg as any)?.stop_reason === "max_tokens";
+    const { citationSources, usage } = attempt;
+    let parsed = attempt.parsed;
+
+    if (!isUsable(attempt)) {
+      const truncated = attempt.stopReason === "max_tokens";
+      console.error("short-term-picks: parse_failed after retry.", {
+        stopReason: attempt.stopReason,
+        rawPreview: attempt.textOut.slice(0, 1200),
+      });
       return NextResponse.json(
         {
           error: "parse_failed",
@@ -166,7 +301,7 @@ Return STRICT JSON only as specified.`;
           message: truncated
             ? "The scan was cut off before finishing. Please try again."
             : "The AI responded but didn't return a usable scan. Please try again.",
-          raw: textOut,
+          raw: attempt.textOut,
         },
         { status: 502 },
       );
@@ -199,13 +334,6 @@ Return STRICT JSON only as specified.`;
       if (s?.url && !merged.has(s.url)) merged.set(s.url, { title: s.title || s.url, url: s.url });
     }
     parsed.sources = Array.from(merged.values());
-
-    const usage = {
-      inputTokens: msg.usage?.input_tokens ?? null,
-      outputTokens: msg.usage?.output_tokens ?? null,
-      webSearches: (msg.usage as any)?.server_tool_use?.web_search_requests ?? 0,
-      model: MODEL,
-    };
 
     return NextResponse.json({ ...parsed, usage, source: "claude-live" });
   } catch (e: any) {

@@ -443,3 +443,24 @@ export function extractJson(text: string): string {
   // let the caller's JSON.parse surface the failure.
   return s.slice(start);
 }
+
+/**
+ * Best-effort cleanup for near-miss JSON text that `JSON.parse` would
+ * otherwise reject outright. Intended as a last-resort fallback layer AFTER
+ * `extractJson` has already sliced out the JSON substring — not a full
+ * parser, just fixes for the handful of mistakes small/fast models
+ * (e.g. Haiku) routinely make when asked to emit strict JSON amid other
+ * tool-use context:
+ *   1. Smart/curly quotes (‘ ’ “ ”) → straight quotes.
+ *   2. Trailing commas before a closing `}` or `]`.
+ * Returns a new string; does not mutate the input.
+ */
+export function repairJsonLenient(text: string): string {
+  let s = text ?? "";
+  // Normalize smart quotes to straight quotes.
+  s = s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+  // Remove trailing commas before a closing brace/bracket (with optional
+  // whitespace/newlines in between).
+  s = s.replace(/,(\s*[}\]])/g, "$1");
+  return s;
+}
