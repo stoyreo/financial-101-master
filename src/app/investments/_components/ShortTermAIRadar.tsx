@@ -436,15 +436,41 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
     setError(null);
     setResult(null);
     setSelected(null);
+    // The scan runs a live server-side web search and can legitimately take
+    // 20-40s. Abort at 90s so a hung request surfaces a real message instead
+    // of spinning forever.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90_000);
     try {
       const res = await fetch("/api/investments/short-term-picks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ riskProfile, horizonDays }),
+        signal: controller.signal,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data?.message || "AI scan failed. Please try again.");
+
+      // The endpoint returns JSON on every code path, but an upstream gateway
+      // timeout (504) or an unhandled crash (500) can hand back an HTML error
+      // page. Read the body as text first and parse defensively so a non-JSON
+      // response becomes an accurate message instead of a misleading
+      // "network error" (res.json() would throw straight into the catch).
+      const rawBody = await res.text();
+      let data: any = null;
+      try {
+        data = rawBody ? JSON.parse(rawBody) : null;
+      } catch {
+        /* non-JSON body (e.g. an HTML 504/500 page) — handled below */
+      }
+
+      if (!res.ok || !data) {
+        setError(
+          data?.message ||
+            (res.status === 504 || res.status === 408
+              ? "The market scan took too long upstream and timed out. Please try again."
+              : res.status >= 500
+                ? `The AI scan service is temporarily unavailable (HTTP ${res.status}). Please try again shortly.`
+                : `AI scan failed (HTTP ${res.status}). Please try again.`),
+        );
         return;
       }
       const scan = data as ScanResult;
@@ -486,9 +512,14 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
           },
         }),
       }).catch(() => { /* fire-and-forget */ });
-    } catch {
-      setError("Network error — could not reach the AI scan endpoint.");
+    } catch (e: any) {
+      if (e?.name === "AbortError") {
+        setError("The market scan timed out after 90s — the live search may be slow right now. Please try again.");
+      } else {
+        setError("Network error — could not reach the AI scan endpoint. Check your connection and try again.");
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, [riskProfile, userId, fetchPrices, horizonDays]);
