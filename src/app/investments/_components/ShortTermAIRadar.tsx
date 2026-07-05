@@ -250,16 +250,21 @@ function MoveRangeBar({ move }: { move: Pick["expectedMovePct"] }) {
 
 /* ------------------------------------------------------------- simulation */
 
-function SimulationPanel({ pick, defaultHorizon, entryPrice }: { pick: Pick; defaultHorizon: number; entryPrice?: number }) {
+function SimulationPanel({ pick, defaultHorizon, entryPrice, direction }: { pick: Pick; defaultHorizon: number; entryPrice?: number; direction?: string }) {
   const [horizon, setHorizon] = useState(defaultHorizon);
   const { fan, probGain } = useMemo(() => simulatePaths(pick, horizon), [pick, horizon]);
   const last = fan[fan.length - 1];
+  // A short profits when the price FALLS, so flip the probability and the stop.
+  const isShort = direction === "short";
+  const probProfit = isShort ? 1 - probGain : probGain;
   // With a live entry price the chart speaks in dollars; otherwise indexed %.
   const hasPx = typeof entryPrice === "number" && entryPrice > 0;
   const toUsd = (idx: number) => (entryPrice as number) * (idx / 100);
   const fmt = (v: number) => `${(v - 100) >= 0 ? "+" : ""}${(v - 100).toFixed(1)}%`;
   const fmtFull = (v: number) => (hasPx ? `$${toUsd(v).toFixed(2)} (${fmt(v)})` : fmt(v));
-  const stopPrice = hasPx ? toUsd(100 + pick.expectedMovePct.low) : null;
+  // Stop sits on the losing side: below entry for a long, above entry for a short.
+  const stopMovePct = isShort ? pick.expectedMovePct.high : pick.expectedMovePct.low;
+  const stopPrice = hasPx ? toUsd(100 + stopMovePct) : null;
 
   return (
     <div className="stg-enter rounded-xl border border-blue-200/60 dark:border-blue-800/40 bg-gradient-to-br from-blue-50/60 to-violet-50/40 dark:from-blue-950/30 dark:to-violet-950/20 p-4">
@@ -288,8 +293,8 @@ function SimulationPanel({ pick, defaultHorizon, entryPrice }: { pick: Pick; def
           </div>
         )}
         <div className="rounded-lg bg-white/70 dark:bg-slate-900/50 py-2">
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">P(gain)</div>
-          <div className={cn("text-lg font-bold tabular-nums", probGain >= 0.5 ? "text-emerald-500" : "text-red-500")}>{Math.round(probGain * 100)}%</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{isShort ? "P(profit ▼)" : "P(profit ▲)"}</div>
+          <div className={cn("text-lg font-bold tabular-nums", probProfit >= 0.5 ? "text-emerald-500" : "text-red-500")}>{Math.round(probProfit * 100)}%</div>
         </div>
         <div className="rounded-lg bg-white/70 dark:bg-slate-900/50 py-2">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Median</div>
@@ -308,7 +313,7 @@ function SimulationPanel({ pick, defaultHorizon, entryPrice }: { pick: Pick; def
           <div className="rounded-lg bg-white/70 dark:bg-slate-900/50 py-2">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Suggested stop</div>
             <div className="text-lg font-bold tabular-nums text-red-500">${stopPrice.toFixed(2)}</div>
-            <div className="text-[10px] tabular-nums text-muted-foreground">{pick.expectedMovePct.low.toFixed(1)}%</div>
+            <div className="text-[10px] tabular-nums text-muted-foreground">{stopMovePct >= 0 ? "+" : ""}{stopMovePct.toFixed(1)}%</div>
           </div>
         )}
       </div>
@@ -367,6 +372,8 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
   // Trade-window mode: ultra-short (3–5 trading days) or standard (7–14).
   const [horizonMode, setHorizonMode] = useState<"3-5" | "7-14">("3-5");
   const horizonDays = horizonMode === "3-5" ? 4 : 10;
+  // Direction bias: which side(s) to surface — long only, short only, or both.
+  const [bias, setBias] = useState<"long" | "short" | "both">("both");
 
   // Hydrate today's cached scan on mount (upgrade #5).
   useEffect(() => {
@@ -379,8 +386,8 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
         setResult(cached.result);
         setPrices(cached.prices ?? {});
         setCachedAt(cached.cachedAt ?? null);
-        const firstLong = (cached.result as ScanResult).picks.find((p) => p.direction === "long");
-        setSelected(firstLong?.ticker ?? cached.result.picks[0]?.ticker ?? null);
+        const firstTradable = (cached.result as ScanResult).picks.find((p) => p.direction !== "avoid");
+        setSelected(firstTradable?.ticker ?? cached.result.picks[0]?.ticker ?? null);
       }
     } catch { /* corrupt cache — ignore */ }
   }, [userId]);
@@ -445,7 +452,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
       const res = await fetch("/api/investments/short-term-picks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ riskProfile, horizonDays }),
+        body: JSON.stringify({ riskProfile, horizonDays, direction: bias }),
         signal: controller.signal,
       });
 
@@ -475,8 +482,8 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
       }
       const scan = data as ScanResult;
       setResult(scan);
-      const firstLong = scan.picks?.find((p) => p.direction === "long");
-      setSelected(firstLong?.ticker ?? scan.picks?.[0]?.ticker ?? null);
+      const firstTradable = scan.picks?.find((p) => p.direction !== "avoid");
+      setSelected(firstTradable?.ticker ?? scan.picks?.[0]?.ticker ?? null);
 
       // Upgrade #4: real dollar levels for the simulation panel.
       const px = await fetchPrices(scan.picks.map((p) => p.ticker));
@@ -522,7 +529,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
       clearTimeout(timeout);
       setLoading(false);
     }
-  }, [riskProfile, userId, fetchPrices, horizonDays]);
+  }, [riskProfile, userId, fetchPrices, horizonDays, bias]);
 
   const selectedPick = result?.picks.find((p) => p.ticker === selected) ?? null;
 
@@ -568,6 +575,27 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
             )}
           </CardTitle>
           <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Trade direction">
+              {(["long", "short", "both"] as const).map((b) => (
+                <button
+                  key={b}
+                  onClick={() => setBias(b)}
+                  disabled={loading}
+                  className={cn(
+                    "px-2.5 py-1.5 font-medium transition-colors capitalize",
+                    bias === b
+                      ? b === "short"
+                        ? "bg-red-600 text-white"
+                        : b === "long"
+                          ? "bg-emerald-600 text-white"
+                          : "bg-violet-600 text-white"
+                      : "bg-transparent text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {b}
+                </button>
+              ))}
+            </div>
             <div className="flex rounded-lg border border-border overflow-hidden text-xs" role="group" aria-label="Trade window">
               {(["3-5", "7-14"] as const).map((m) => (
                 <button
@@ -638,7 +666,14 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               {result.picks.map((p, i) => {
                 const isSel = p.ticker === selected;
-                const long = p.direction !== "avoid";
+                const dir: "long" | "short" | "avoid" =
+                  p.direction === "short" ? "short" : p.direction === "avoid" ? "avoid" : "long";
+                const dirCls =
+                  dir === "long"
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    : dir === "short"
+                      ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400";
                 const isPinned = pinned.has(p.ticker);
                 return (
                   <div
@@ -658,10 +693,9 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-base">{p.ticker}</span>
-                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                          long ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400")}>
-                          {long ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                          {long ? "LONG" : "AVOID"}
+                        <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", dirCls)}>
+                          {dir === "long" ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                          {dir === "long" ? "LONG" : dir === "short" ? "SHORT" : "AVOID"}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -721,6 +755,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
                 pick={selectedPick}
                 defaultHorizon={result.horizonDays || 10}
                 entryPrice={prices[selectedPick.ticker]}
+                direction={selectedPick.direction}
               />
             )}
 

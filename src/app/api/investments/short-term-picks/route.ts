@@ -34,7 +34,19 @@ export const maxDuration = 60;
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_WEB_SEARCHES = 4; // hard cap → bounds token/cost per click
 
-const systemPrompt = (horizonDays: number) => `You are a disciplined US-equity tactical analyst. The user wants SHORT-TERM
+type Bias = "long" | "short" | "both";
+
+// Direction instruction injected into the system prompt. A "short" idea is a
+// real tradable bearish setup (borrow & sell, profit if it falls) — distinct
+// from "avoid", which just flags a long to skip.
+const biasInstruction = (bias: Bias) =>
+  bias === "short"
+    ? `Focus on SHORT candidates (direction "short") — liquid names likely to FALL over the window on a near-term negative catalyst, technical breakdown, or fading momentum. These are real bearish trades (borrow-and-sell), NOT just stocks to avoid. You may include at most one "long" for contrast.`
+    : bias === "long"
+      ? `Skew LONG candidates (direction "long"); you may include at most one "avoid" (a stock facing a near-term negative catalyst) for contrast.`
+      : `Give a balanced MIX of LONG (direction "long") and SHORT (direction "short") candidates — wherever you see the clearest edge in either direction. Include at least one of each if the tape supports it. A "short" is a real bearish trade, not merely a stock to avoid.`;
+
+const systemPrompt = (horizonDays: number, bias: Bias) => `You are a disciplined US-equity tactical analyst. The user wants SHORT-TERM
 (~${horizonDays} trading day) idea candidates from LIQUID S&P 500 large-cap stocks only.
 
 Use the web_search tool (at most ${MAX_WEB_SEARCHES} searches) to ground everything in what is
@@ -43,8 +55,7 @@ actions, sector rotation, macro events (Fed, CPI, jobs) inside the window. Prefe
 reputable sources (major financial press, exchange/company IR pages, Morningstar).
 Do NOT invent prices, dates, or figures — only report what you actually found.
 
-Pick 4-6 candidates. Skew LONG candidates; you may include at most one "avoid"
-(stock facing a near-term negative catalyst) for contrast. Be quantitative and honest:
+Pick 4-6 candidates. ${biasInstruction(bias)} Be quantitative and honest:
 short-horizon prediction is low-signal, so calibrate confidence conservatively
 (a confidence above 75 should be rare).${horizonDays <= 5 ? `
 
@@ -75,12 +86,12 @@ SCHEMA (used by both the submit_scan tool and the JSON fallback):
       "ticker": string,                 // e.g. "NVDA"
       "company": string,
       "sector": string,
-      "direction": string,              // "long" | "avoid"
+      "direction": string,              // "long" (buy) | "short" (borrow & sell, profit if it falls) | "avoid" (a long to skip)
       "thesis": string,                 // 2 sentences max, referencing what you found
       "catalyst": string,               // the specific near-term driver (earnings, product event, macro print...)
       "catalystDate": string,           // ISO date or "" if none/unknown
-      "confidence": number,             // 0-100 conviction THIS window, calibrated conservatively
-      "expectedMovePct": {              // expected % TOTAL move over the horizon
+      "confidence": number,             // 0-100 conviction in THIS trade working out, calibrated conservatively (a short scores high when you're confident it falls)
+      "expectedMovePct": {              // expected % move of the UNDERLYING STOCK PRICE over the horizon, regardless of trade direction — so a SHORT idea has a NEGATIVE base (price drops)
         "low": number,                  // pessimistic case, e.g. -6
         "base": number,                 // central case, e.g. 3
         "high": number                  // optimistic case, e.g. 9
@@ -125,7 +136,7 @@ const SUBMIT_SCAN_TOOL = {
             ticker: { type: "string" },
             company: { type: "string" },
             sector: { type: "string" },
-            direction: { type: "string", description: '"long" | "avoid"' },
+            direction: { type: "string", description: '"long" (buy) | "short" (borrow & sell, profit if it falls) | "avoid" (a long to skip)' },
             thesis: { type: "string" },
             catalyst: { type: "string" },
             catalystDate: { type: "string", description: "ISO date or empty string" },
@@ -187,9 +198,18 @@ export async function POST(req: Request) {
     // 3–5 day "ultra-short" mode is allowed; anything else clamps into 3..14.
     const horizonDaysRaw = Number(body?.horizonDays);
     const horizonDays = Number.isFinite(horizonDaysRaw) ? Math.min(14, Math.max(3, Math.round(horizonDaysRaw))) : 10;
+    // Direction bias: which side(s) the scan should surface. Defaults to "both".
+    const biasRaw = typeof body?.direction === "string" ? body.direction.toLowerCase() : "both";
+    const bias: Bias = biasRaw === "short" ? "short" : biasRaw === "long" ? "long" : "both";
 
     const today = new Date().toISOString().slice(0, 10);
-    const userPrompt = `Today is ${today}. My risk profile: ${riskProfile}.
+    const biasAsk =
+      bias === "short"
+        ? "I specifically want SHORT (bearish) trades — names likely to fall."
+        : bias === "long"
+          ? "I want LONG (bullish) trades."
+          : "I want a mix of LONG and SHORT trades.";
+    const userPrompt = `Today is ${today}. My risk profile: ${riskProfile}. ${biasAsk}
 Scan the current US large-cap tape and give me your best ${horizonDays}-trading-day candidates.
 Focus on liquid S&P 500 names with a clearly identifiable near-term catalyst or momentum setup.
 Return STRICT JSON only as specified.`;
@@ -206,7 +226,7 @@ Return STRICT JSON only as specified.`;
         // Headroom so the final result (pulse + 4-6 picks + sources) isn't
         // truncated mid-object after web_search consumes context.
         max_tokens: 8192,
-        system: systemPrompt(horizonDays),
+        system: systemPrompt(horizonDays, bias),
         messages: [{ role: "user", content: userPrompt }],
         tools: [
           {

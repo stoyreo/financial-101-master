@@ -16,11 +16,13 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from "@/components/ui";
 import {
   Pin, PinOff, RefreshCw, Loader2, TrendingUp, TrendingDown, CalendarClock, AlertCircle, BellRing, BellOff,
+  ChevronDown, ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   loadWatchlist, unpinTicker, saveWatchlist, syncWatchlistFromServer, WATCHLIST_EVENT, type WatchItem,
 } from "./watchlist";
+import { ScorecardSection } from "./ScorecardCard";
 import { useStore } from "@/lib/store";
 
 type QuoteResp = {
@@ -51,6 +53,7 @@ export function WatchlistCard({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState(false);
+  const [showScorecard, setShowScorecard] = useState(false);
 
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [alertsBusy, setAlertsBusy] = useState(false);
@@ -243,6 +246,18 @@ export function WatchlistCard({ userId }: { userId: string }) {
             })}
           </div>
         )}
+
+        {/* Radar scorecard — merged in here since both are radar follow-ups */}
+        <div className="mt-4 pt-3 border-t border-border">
+          <button
+            onClick={() => setShowScorecard(s => !s)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showScorecard ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            Radar scorecard — how accurate were past scans?
+          </button>
+          {showScorecard && <div className="mt-3"><ScorecardSection /></div>}
+        </div>
       </CardContent>
     </Card>
   );
