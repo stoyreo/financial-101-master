@@ -20,6 +20,8 @@ import { useAiModelPref, type AiModelPref } from "@/lib/ai-model-pref";
 export interface ModelPickerProps {
   /** Hide the local Ollama option (image/PDF routes — local Gemma is text-only). */
   visionOnly?: boolean;
+  /** Hide the local Ollama option (routes needing live web search — no local search). */
+  hideOllama?: boolean;
   /** Extra classes for the wrapper. */
   className?: string;
   /** Hide the little CPU icon + label, select only. */
@@ -33,14 +35,15 @@ const LABELS: Record<AiModelPref, string> = {
   claude: "Claude",
 };
 
-export default function ModelPicker({ visionOnly, className, bare }: ModelPickerProps) {
+export default function ModelPicker({ visionOnly, hideOllama, className, bare }: ModelPickerProps) {
   const [pref, setPref] = useAiModelPref();
-  const options: AiModelPref[] = visionOnly
+  const noOllama = visionOnly || hideOllama;
+  const options: AiModelPref[] = noOllama
     ? ["auto", "gemini", "claude"]
     : ["auto", "ollama", "gemini", "claude"];
 
-  // If a text-only pick (ollama) is carried into a vision context, show Auto.
-  const value = visionOnly && pref === "ollama" ? "auto" : pref;
+  // If a text-only pick (ollama) is carried into a context that can't use it, show Auto.
+  const value = noOllama && pref === "ollama" ? "auto" : pref;
 
   return (
     <label

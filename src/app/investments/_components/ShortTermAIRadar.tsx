@@ -28,6 +28,8 @@ import {
   ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { TokenUsageStamp } from "./TokenUsageStamp";
+import ModelPicker from "@/components/ai/ModelPicker";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
 
 /* ------------------------------------------------------------------ types */
 
@@ -451,7 +453,9 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
     try {
       const res = await fetch("/api/investments/short-term-picks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // aiProviderHeaders() carries the ModelPicker choice (x-ai-provider)
+        // so the server scans with Gemini (free) or Claude as selected.
+        headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({ riskProfile, horizonDays, direction: bias }),
         signal: controller.signal,
       });
@@ -613,6 +617,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
                 </button>
               ))}
             </div>
+            <ModelPicker hideOllama />
             <Button onClick={run} disabled={loading} className="bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white border-0 shadow-lg shadow-violet-500/25">
               {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
               {loading ? "Scanning…" : result ? "Re-scan the tape" : "Scan the market"}
@@ -620,7 +625,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Claude live-searches S&amp;P 500 momentum, catalysts and earnings dates, scores the tape, and hands its expected-move estimates to an on-device Monte Carlo simulator. On-demand only — one click, one capped API call.
+          Your chosen AI model live-searches S&amp;P 500 momentum, catalysts and earnings dates, scores the tape, and hands its expected-move estimates to an on-device Monte Carlo simulator. On-demand only — one click, one capped API call. Local Gemma isn&apos;t offered here (no live web search).
         </p>
       </CardHeader>
 
