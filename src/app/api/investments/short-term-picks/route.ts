@@ -277,10 +277,20 @@ Return STRICT JSON only as specified.`;
             system_instruction: { parts: [{ text: geminiSystemPrompt(horizonDays, bias) }] },
             contents: [{ role: "user", parts: [{ text: userPrompt }] }],
             tools: [{ google_search: {} }],
-            generationConfig: { maxOutputTokens: 8192, temperature: 0.3 },
+            generationConfig: {
+              maxOutputTokens: 8192,
+              temperature: 0.3,
+              // Gemini 2.5 "thinks" by default, which with search grounding +
+              // a large JSON answer regularly exceeds an entire request
+              // timeout budget. The scan needs grounded facts, not deep
+              // reasoning — disable thinking for speed.
+              thinkingConfig: { thinkingBudget: 0 },
+            },
           }),
           cache: "no-store",
-          signal: AbortSignal.timeout(55_000),
+          // The client aborts at 90s; stay just inside it so a slow Gemini
+          // answer surfaces a real server error instead of a client abort.
+          signal: AbortSignal.timeout(85_000),
         },
       );
       if (!res.ok) {
@@ -477,6 +487,9 @@ Return STRICT JSON only as specified.`;
     }
     if (/gemini_http_40[13]/.test(raw)) {
       return err("auth_failed", "Gemini authentication failed server-side (check GEMINI_API_KEY).", 401);
+    }
+    if (/aborted due to timeout|TimeoutError/i.test(raw)) {
+      return err("timeout", "The AI scan took too long and timed out. Please try again.", 504);
     }
     return err("unknown", raw || "AI stock scan request failed.", 500);
   }

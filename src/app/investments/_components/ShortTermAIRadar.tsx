@@ -29,7 +29,7 @@ import {
 } from "recharts";
 import { TokenUsageStamp } from "./TokenUsageStamp";
 import ModelPicker from "@/components/ai/ModelPicker";
-import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import { aiProviderHeaders, useAiModelPref } from "@/lib/ai-model-pref";
 
 /* ------------------------------------------------------------------ types */
 
@@ -190,7 +190,7 @@ function PulseGauge({ score, label }: { score: number; label: string }) {
 
 /* ------------------------------------------------------------ radar loader */
 
-function RadarLoader() {
+function RadarLoader({ modelLabel }: { modelLabel: string }) {
   return (
     <div className="flex flex-col items-center gap-4 py-10">
       <div className="relative h-36 w-36">
@@ -212,7 +212,7 @@ function RadarLoader() {
       </div>
       <div className="text-sm text-muted-foreground flex items-center gap-2">
         <Loader2 className="h-4 w-4 animate-spin" />
-        Claude is scanning the live US tape (momentum, catalysts, earnings)…
+        {modelLabel} is scanning the live US tape (momentum, catalysts, earnings)…
       </div>
     </div>
   );
@@ -376,6 +376,11 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
   const horizonDays = horizonMode === "3-5" ? 4 : 10;
   // Direction bias: which side(s) to surface — long only, short only, or both.
   const [bias, setBias] = useState<"long" | "short" | "both">("both");
+  // Shared ModelPicker pref → loader label matches the model actually scanning.
+  // "ollama" is treated as auto by the scan route, so both label as Claude
+  // (the auto default when the server is keyed for Anthropic).
+  const [modelPref] = useAiModelPref();
+  const scanModelLabel = modelPref === "gemini" ? "Gemini Flash" : "Claude";
 
   // Hydrate today's cached scan on mount (upgrade #5).
   useEffect(() => {
@@ -630,7 +635,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
       </CardHeader>
 
       <CardContent className="relative space-y-5">
-        {loading && <RadarLoader />}
+        {loading && <RadarLoader modelLabel={scanModelLabel} />}
 
         {error && (
           <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-400">
