@@ -26,7 +26,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { aiComplete, AiUnavailableError, extractJson } from "@/lib/ai-provider";
+import { aiComplete, AiUnavailableError, extractJson, requestedProvider } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -101,7 +101,7 @@ ${SCHEMA}`;
       maxTokens: 1500,
       json: true,
       claudeModel: "claude-haiku-4-5-20251001",
-    });
+    }, requestedProvider(req));
     const jsonStr = extractJson(text);
 
     let parsed: any;

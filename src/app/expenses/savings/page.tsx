@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { budgetVsActual, ymLabel } from "@/lib/actuals";
 import { localSuggestCuts, type CutsResult } from "@/lib/savingsCuts";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 export default function SavingsPage() {
   const store = useStore();
@@ -105,7 +107,7 @@ export default function SavingsPage() {
     try {
       const res = await fetch("/api/expenses/suggest-cuts", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({
           monthlyIncome,
           monthlySavingsTarget: target,
@@ -175,10 +177,11 @@ export default function SavingsPage() {
                 </Select>
               </div>
             )}
-            <div className="flex gap-2 ml-auto">
+            <div className="flex items-center gap-2 ml-auto">
               <Button variant="outline" onClick={runLocalScan} disabled={loading !== null || rows.length === 0}>
                 <Cpu size={14} /> {loading === "local" ? "Scanning…" : "Local Scan"}
               </Button>
+              <ModelPicker />
               <Button onClick={runAiScan} disabled={loading !== null || rows.length === 0}>
                 <Sparkles size={14} /> {loading === "ai" ? "Asking AI…" : "AI Scan"}
               </Button>

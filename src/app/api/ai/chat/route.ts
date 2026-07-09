@@ -33,7 +33,7 @@
  * "local insight" mode instead of hanging on a broken stream.
  */
 
-import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
+import { aiStream, AiUnavailableError, requestedProvider } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const runtime = "nodejs";
@@ -136,7 +136,7 @@ export async function POST(req: Request) {
   const messages: ChatMessage[] = Array.isArray(body?.messages) ? body.messages : [];
   const context = body?.context;
   const action = body?.action;
-  const clientProvider: string | undefined = body?.provider; // "ollama" | "claude"
+  const clientProvider: string | undefined = body?.provider; // "ollama" | "gemini" | "claude"
   const clientModel: string | undefined = body?.model;
   const profile: Record<string, unknown> | null = body?.profile ?? null;
   const fullPlanContext: string | null = body?.fullPlanContext ?? null;
@@ -179,7 +179,9 @@ export async function POST(req: Request) {
         claudeModel: "claude-sonnet-4-6",
         ollamaModel: clientModel,
       },
-      clientProvider === "claude" ? "claude" : clientProvider === "ollama" ? "ollama" : undefined,
+      clientProvider === "claude" || clientProvider === "gemini" || clientProvider === "ollama"
+        ? clientProvider
+        : requestedProvider(req),
     );
     stream = result.stream;
     source = result.source;

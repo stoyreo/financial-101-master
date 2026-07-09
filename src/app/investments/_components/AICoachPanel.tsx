@@ -4,6 +4,8 @@ import { Button, Badge } from "@/components/ui";
 import { Brain, X, Loader2, AlertCircle, CheckCircle2, AlertTriangle, Lightbulb, ClipboardList } from "lucide-react";
 import { cn, thb } from "@/lib/utils";
 import type { InvestmentScenario } from "./snapshots";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 type AnalysisResult = {
   verdict: string;
@@ -44,7 +46,7 @@ export function AICoachPanel({ scenario, baseProjection, scenarioProjection, pro
     try {
       const res = await fetch("/api/investments/scenario-analysis", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({
           scenario: {
             ...scenario,
@@ -74,16 +76,19 @@ export function AICoachPanel({ scenario, baseProjection, scenarioProjection, pro
 
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={runAnalysis}
-        disabled={loading}
-        className="gap-1.5"
-      >
-        {loading ? <Loader2 size={13} className="animate-spin" /> : <Brain size={13} />}
-        Analyze this scenario
-      </Button>
+      <span className="inline-flex items-center gap-2">
+        <ModelPicker />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={runAnalysis}
+          disabled={loading}
+          className="gap-1.5"
+        >
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <Brain size={13} />}
+          Analyze this scenario
+        </Button>
+      </span>
 
       {/* Drawer overlay */}
       {open && (

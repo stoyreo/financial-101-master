@@ -14,6 +14,8 @@ import {
 } from "@/components/ui";
 import { Plus, Edit, Trash2, ShoppingCart, Filter, Upload, Sparkles, Tag, X, Gauge, AlertTriangle, ArrowRight, PlusCircle, ChevronRight } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 const PVD_RATE = 0.10;
 
@@ -229,7 +231,7 @@ export default function ExpensesPage() {
       const activeItems = expenses.filter(e => e.isActive);
       const res = await fetch("/api/expenses/ai-match", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({
           transactions: candidates.map(t => ({
             id: t.id, description: t.description, merchantKey: t.merchantKey,
@@ -425,14 +427,17 @@ export default function ExpensesPage() {
                 <div className="flex items-center gap-2">
                   {totalGap > 0 && <span className="text-xs text-muted-foreground">Unbudgeted/over by {thb(totalGap)}/mo</span>}
                   {unmatchedForAi.length > 0 && (
-                    <Button
-                      size="sm" variant="outline"
-                      onClick={runAiMatch}
-                      disabled={aiMatchLoading}
-                      title="Ask AI to re-check unmatched transactions against your existing budget items (recurring merchants under different names, split bills, etc.)"
-                    >
-                      <Sparkles size={14} /> {aiMatchLoading ? "AI matching…" : `AI Match (${unmatchedForAi.length})`}
-                    </Button>
+                    <>
+                      <ModelPicker />
+                      <Button
+                        size="sm" variant="outline"
+                        onClick={runAiMatch}
+                        disabled={aiMatchLoading}
+                        title="Ask AI to re-check unmatched transactions against your existing budget items (recurring merchants under different names, split bills, etc.)"
+                      >
+                        <Sparkles size={14} /> {aiMatchLoading ? "AI matching…" : `AI Match (${unmatchedForAi.length})`}
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>

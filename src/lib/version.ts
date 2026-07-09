@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.8.0";
-export const BUILD_DATE = "2026-06-07";
+export const APP_VERSION = "3.9.0";
+export const BUILD_DATE = "2026-07-09";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.9.0",
+    date: "2026-07-09",
+    changes: [
+      "Google Gemini Flash (free AI Studio tier) added as a hosted AI provider and made the DEFAULT — provider order is now Gemini → local Ollama → Claude, so AI features work free on Vercel where localhost Ollama is unreachable",
+      "New model picker next to every AI trigger button (Live Coach, AI Match, AI Scan, fund forecasts, scenario analysis, payslip import, slip OCR, Fin chat) — choose Auto, Gemma (local), Gemini Flash (free), or Claude before each request; the choice is shared app-wide",
+      "Slip OCR and payslip extraction now run through the unified vision provider (Gemini vision first, Claude fallback) instead of calling Claude directly",
+      "Fin avatar's provider dropdown gained Gemini Flash and now drives the same shared model preference as the pickers",
+    ],
+  },
   {
     version: "3.8.0",
     date: "2026-06-07",

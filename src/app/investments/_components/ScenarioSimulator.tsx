@@ -5,6 +5,7 @@ import { cn, thb } from "@/lib/utils";
 import { BarChart2, LineChart, Activity, Target, Trash2, Info } from "lucide-react";
 import { v4 as uuid } from "uuid";
 import { getSession } from "@/lib/auth-client";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
 
 import type { InvestmentAccount } from "@/lib/types";
 import {
@@ -115,8 +116,8 @@ export function ScenarioSimulator({
       }
     } catch { /* ignore */ }
 
-    // Fetch from API
-    fetch("/api/investments/preset-vectors", { method: "POST" })
+    // Fetch from API (honors the shared AI model preference)
+    fetch("/api/investments/preset-vectors", { method: "POST", headers: { ...aiProviderHeaders() } })
       .then(r => r.json())
       .then(data => {
         if (data.presets) {

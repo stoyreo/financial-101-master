@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiVisionComplete, requestedProvider } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -33,31 +33,16 @@ export async function POST(req: Request) {
     const { mediaType, data } = await req.json() as { mediaType: string; data: string };
     if (!data) return NextResponse.json({ error: "no_data" }, { status: 400 });
 
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-    // Anthropic supports image_url or base64 for images and document for PDFs.
-    const isPdf = mediaType === "application/pdf";
-    const contentBlock = isPdf
-      ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data } }
-      : { type: "image"    as const, source: { type: "base64" as const, media_type: mediaType as any, data } };
-
-    const msg = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 800,
+    // Gemini Flash (free tier) first, Claude Haiku as fallback. Both handle
+    // base64 images and PDFs.
+    const { text } = await aiVisionComplete({
       system: SYSTEM,
-      messages: [{
-        role: "user",
-        content: [
-          contentBlock,
-          { type: "text", text: `Extract the payslip. ${SCHEMA_HINT} Output JSON only.` },
-        ],
-      }],
-    });
-
-    const text = msg.content
-      .filter(b => b.type === "text")
-      .map(b => (b as any).text)
-      .join("");
+      prompt: `Extract the payslip. ${SCHEMA_HINT} Output JSON only.`,
+      media: { mediaType, data },
+      maxTokens: 800,
+      json: true,
+      claudeModel: "claude-haiku-4-5-20251001",
+    }, requestedProvider(req));
 
     // Strip ``` fences if Claude added them
     const jsonStr = text.replace(/^```(?:json)?\s*|\s*```$/g, "").trim();

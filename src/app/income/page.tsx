@@ -10,6 +10,8 @@ import {
   InfoTooltip, AITokenMeter, recordTokenUsage, Separator
 } from "@/components/ui";
 import { Plus, Edit, Trash2, TrendingUp, DollarSign, Briefcase, PiggyBank, FileUp, Receipt } from "lucide-react";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 const CATEGORIES: IncomeCategory[] = ["salary", "bonus", "freelance", "rental", "dividend", "interest", "other"];
 const FREQUENCIES: Frequency[] = ["monthly", "yearly", "one-time"];
@@ -165,7 +167,7 @@ export default function IncomePage() {
 
       const res = await fetch("/api/payslip/extract", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({ mediaType: file.type, data: b64 }),
       });
       if (!res.ok) {
@@ -216,7 +218,8 @@ export default function IncomePage() {
         subtitle="Manage all income sources with growth projections"
         actions={
           <div className="flex flex-col gap-2">
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <ModelPicker visionOnly />
               <label className={`inline-flex items-center gap-1.5 px-3 h-9 rounded-lg border border-border
                                bg-card hover:bg-muted text-sm cursor-pointer ${ocrBusy ? "opacity-50 pointer-events-none" : ""}`}>
                 <FileUp size={14} />

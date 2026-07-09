@@ -1,16 +1,21 @@
 /**
  * Central AI provider abstraction for Financial 101 Master.
  *
- * Default provider is the user's LOCAL Ollama running Google's Gemma 4
- * (`gemma4`) on their Mac — reached over HTTP at OLLAMA_BASE_URL
- * (default http://localhost:11434). Anthropic Claude is kept as an
- * automatic FALLBACK so nothing breaks when Ollama is offline (laptop
- * asleep, model not pulled, etc.) or when running on a server that can't
- * see localhost.
+ * Default provider is Google Gemini Flash (free AI Studio tier) — it works
+ * both locally and on Vercel. The user's LOCAL Ollama running Gemma
+ * (OLLAMA_BASE_URL, default http://localhost:11434) is the second choice,
+ * and Anthropic Claude is the final automatic FALLBACK so nothing breaks
+ * when Gemini hits its daily free quota or Ollama is offline.
+ *
+ * Google Gemini (free tier via AI Studio, GEMINI_API_KEY) sits between the
+ * two: it costs nothing at this app's scale, works from Vercel where
+ * localhost Ollama is unreachable, and supports vision (slip OCR, payslip
+ * extraction) via `aiVisionComplete`.
  *
  * Provider order is controlled by AI_PROVIDER:
- *   - "ollama" (default) → try Ollama Gemma 4 first, then Claude
- *   - "claude"           → try Claude first, then Ollama
+ *   - "gemini" (default) → Gemini → Ollama → Claude
+ *   - "ollama"           → Ollama → Gemini → Claude
+ *   - "claude"           → Claude → Gemini → Ollama
  *
  * Every AI-powered analysis route in the app should go through here instead
  * of constructing an Anthropic client directly, so the provider choice and
@@ -23,8 +28,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 export type ProviderMessage = { role: "user" | "assistant"; content: string };
-export type AiSource = "ollama-gemma4" | "claude-live";
-type ProviderId = "ollama" | "claude";
+export type AiSource = "ollama-gemma4" | "gemini-flash" | "claude-live";
+export type ProviderId = "ollama" | "gemini" | "claude";
+
+/**
+ * Per-request provider override sent by the client (the ModelPicker UI puts
+ * the user's choice in an `x-ai-provider` header on every AI trigger).
+ * Returns undefined for "auto"/absent/unrecognized values.
+ */
+export function requestedProvider(req: Request): ProviderId | undefined {
+  const v = (req.headers.get("x-ai-provider") || "").toLowerCase();
+  return v === "ollama" || v === "gemini" || v === "claude" ? v : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Config (read once at module load)
@@ -33,19 +48,31 @@ type ProviderId = "ollama" | "claude";
 const OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "http://localhost:11434").replace(/\/+$/, "");
 const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const PREFERRED: ProviderId = (process.env.AI_PROVIDER || "ollama").toLowerCase() === "claude" ? "claude" : "ollama";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_BASE_URL = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
+const PREFERRED: ProviderId = (() => {
+  const v = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+  return v === "claude" || v === "ollama" ? (v as ProviderId) : "gemini";
+})();
 
 /** Exposed so /api/ai/status and debugging can report what's configured. */
 export const aiConfig = {
   ollamaBaseUrl: OLLAMA_BASE_URL,
   ollamaModel: OLLAMA_MODEL,
+  geminiModel: GEMINI_MODEL,
   preferred: PREFERRED,
   hasAnthropicKey: !!ANTHROPIC_API_KEY,
+  hasGeminiKey: !!GEMINI_API_KEY,
 } as const;
 
 /** Order in which we try providers, given the configured preference. */
 function providerOrder(): ProviderId[] {
-  return PREFERRED === "claude" ? ["claude", "ollama"] : ["ollama", "claude"];
+  switch (PREFERRED) {
+    case "claude": return ["claude", "gemini", "ollama"];
+    case "ollama": return ["ollama", "gemini", "claude"];
+    default:       return ["gemini", "ollama", "claude"];
+  }
 }
 
 export class AiUnavailableError extends Error {
@@ -193,6 +220,126 @@ async function probeOllama(): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
+// Gemini transport (free tier — https://aistudio.google.com)
+// ---------------------------------------------------------------------------
+//
+// Spoken to via plain `fetch` against the Generative Language REST API, so
+// no new npm dependency (same approach as Ollama). Free tier is per Google
+// Cloud project: ~1,500 requests/day on Flash as of mid-2026.
+
+type GeminiPart =
+  | { text: string }
+  | { inline_data: { mime_type: string; data: string } };
+
+function geminiUrl(action: "generateContent" | "streamGenerateContent", stream = false): string {
+  const suffix = stream ? "?alt=sse&" : "?";
+  return `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:${action}${suffix}key=${GEMINI_API_KEY}`;
+}
+
+function geminiBody(req: AiRequest): string {
+  return JSON.stringify({
+    system_instruction: { parts: [{ text: req.system }] },
+    contents: req.messages.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    })),
+    generationConfig: {
+      maxOutputTokens: req.maxTokens ?? 1024,
+      temperature: req.temperature ?? (req.json ? 0.2 : 0.6),
+      ...(req.json ? { responseMimeType: "application/json" } : {}),
+    },
+  });
+}
+
+type GeminiResponse = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+};
+
+function geminiText(data: GeminiResponse): string {
+  return (data?.candidates?.[0]?.content?.parts ?? [])
+    .map((p) => p.text ?? "")
+    .join("");
+}
+
+async function geminiComplete(req: AiRequest): Promise<string> {
+  const res = await fetch(geminiUrl("generateContent"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: geminiBody(req),
+    cache: "no-store",
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`gemini_http_${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+  }
+  return geminiText((await res.json()) as GeminiResponse);
+}
+
+async function geminiStream(req: AiRequest): Promise<ReadableStream<Uint8Array>> {
+  const res = await fetch(geminiUrl("streamGenerateContent", true), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: geminiBody(req),
+    cache: "no-store",
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`gemini_http_${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let buffer = "";
+
+  // Gemini SSE streams lines of the form `data: {...GeminiResponse chunk...}`.
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          try {
+            const delta = geminiText(JSON.parse(payload) as GeminiResponse);
+            if (delta) controller.enqueue(encoder.encode(delta));
+          } catch {
+            /* partial SSE line — ignore */
+          }
+        }
+      } catch (e) {
+        controller.error(e);
+      }
+    },
+    cancel() {
+      reader.cancel().catch(() => {});
+    },
+  });
+}
+
+async function probeGemini(): Promise<boolean> {
+  if (!GEMINI_API_KEY) return false;
+  try {
+    const res = await fetch(`${GEMINI_BASE_URL}/models/${GEMINI_MODEL}?key=${GEMINI_API_KEY}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(4000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Claude transport (fallback)
 // ---------------------------------------------------------------------------
 
@@ -316,14 +463,23 @@ async function probeClaude(): Promise<boolean> {
 
 /**
  * Non-streaming completion. Tries the preferred provider, then falls back.
- * Returns the raw assistant text plus which provider answered.
+ * `preferredOverride` (e.g. from `requestedProvider(req)`) puts that provider
+ * first for this call only. Returns the raw assistant text plus which
+ * provider answered.
  */
-export async function aiComplete(req: AiRequest): Promise<AiCompletion> {
+export async function aiComplete(req: AiRequest, preferredOverride?: ProviderId): Promise<AiCompletion> {
+  const order: ProviderId[] = preferredOverride
+    ? [preferredOverride, ...providerOrder().filter((p) => p !== preferredOverride)]
+    : providerOrder();
   let lastErr = "";
-  for (const p of providerOrder()) {
+  for (const p of order) {
     try {
       if (p === "ollama") {
         return { text: await ollamaComplete(req), source: "ollama-gemma4" };
+      }
+      if (p === "gemini") {
+        if (!GEMINI_API_KEY) continue;
+        return { text: await geminiComplete(req), source: "gemini-flash" };
       }
       if (p === "claude") {
         if (!ANTHROPIC_API_KEY) continue;
@@ -334,8 +490,8 @@ export async function aiComplete(req: AiRequest): Promise<AiCompletion> {
     }
   }
   throw new AiUnavailableError(
-    ANTHROPIC_API_KEY ? "all_providers_failed" : "ollama_unreachable_no_fallback",
-    lastErr || "No AI provider was reachable (local Ollama + Claude fallback both unavailable).",
+    ANTHROPIC_API_KEY || GEMINI_API_KEY ? "all_providers_failed" : "ollama_unreachable_no_fallback",
+    lastErr || "No AI provider was reachable (local Ollama, Gemini, and Claude all unavailable).",
   );
 }
 
@@ -346,13 +502,17 @@ export async function aiComplete(req: AiRequest): Promise<AiCompletion> {
  */
 export async function aiStream(req: AiRequest, preferredOverride?: ProviderId): Promise<{ stream: ReadableStream<Uint8Array>; source: AiSource }> {
   const order: ProviderId[] = preferredOverride
-    ? preferredOverride === "claude" ? ["claude", "ollama"] : ["ollama", "claude"]
+    ? [preferredOverride, ...providerOrder().filter((p) => p !== preferredOverride)]
     : providerOrder();
   let lastErr = "";
   for (const p of order) {
     try {
       if (p === "ollama") {
         return { stream: await ollamaStream(req), source: "ollama-gemma4" };
+      }
+      if (p === "gemini") {
+        if (!GEMINI_API_KEY) continue;
+        return { stream: await geminiStream(req), source: "gemini-flash" };
       }
       if (p === "claude") {
         if (!ANTHROPIC_API_KEY) continue;
@@ -363,8 +523,8 @@ export async function aiStream(req: AiRequest, preferredOverride?: ProviderId): 
     }
   }
   throw new AiUnavailableError(
-    ANTHROPIC_API_KEY ? "all_providers_failed" : "ollama_unreachable_no_fallback",
-    lastErr || "No AI provider was reachable (local Ollama + Claude fallback both unavailable).",
+    ANTHROPIC_API_KEY || GEMINI_API_KEY ? "all_providers_failed" : "ollama_unreachable_no_fallback",
+    lastErr || "No AI provider was reachable (local Ollama, Gemini, and Claude all unavailable).",
   );
 }
 
@@ -382,16 +542,116 @@ export async function probeProviders(): Promise<ProbeResult> {
     if (p === "ollama" && (await probeOllama())) {
       return { available: true, provider: "ollama-gemma4", model: OLLAMA_MODEL, baseUrl: OLLAMA_BASE_URL };
     }
+    if (p === "gemini" && (await probeGemini())) {
+      return { available: true, provider: "gemini-flash", model: GEMINI_MODEL, baseUrl: GEMINI_BASE_URL };
+    }
     if (p === "claude" && (await probeClaude())) {
       return { available: true, provider: "claude-live", model: "claude-haiku-4-5", baseUrl: OLLAMA_BASE_URL };
     }
   }
   return {
     available: false,
-    reason: ANTHROPIC_API_KEY ? "no_provider_reachable" : "ollama_unreachable_and_no_api_key",
+    reason: ANTHROPIC_API_KEY || GEMINI_API_KEY ? "no_provider_reachable" : "ollama_unreachable_and_no_api_key",
     model: OLLAMA_MODEL,
     baseUrl: OLLAMA_BASE_URL,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Vision (images + PDFs) — Gemini free tier first, Claude fallback
+// ---------------------------------------------------------------------------
+
+export interface AiVisionRequest {
+  /** Optional system prompt. */
+  system?: string;
+  /** The instruction sent alongside the media. */
+  prompt: string;
+  /** Base64-encoded media. PDFs (`application/pdf`) are supported by both providers. */
+  media: { mediaType: string; data: string };
+  maxTokens?: number;
+  temperature?: number;
+  /** Ask for strict JSON output (Gemini `responseMimeType`; Claude relies on the prompt). */
+  json?: boolean;
+  /** Claude model used on fallback. Defaults to Haiku 4.5. */
+  claudeModel?: string;
+}
+
+async function geminiVisionComplete(req: AiVisionRequest): Promise<string> {
+  const parts: GeminiPart[] = [
+    { inline_data: { mime_type: req.media.mediaType, data: req.media.data } },
+    { text: req.prompt },
+  ];
+  const res = await fetch(geminiUrl("generateContent"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...(req.system ? { system_instruction: { parts: [{ text: req.system }] } } : {}),
+      contents: [{ role: "user", parts }],
+      generationConfig: {
+        maxOutputTokens: req.maxTokens ?? 1024,
+        temperature: req.temperature ?? 0.2,
+        ...(req.json ? { responseMimeType: "application/json" } : {}),
+      },
+    }),
+    cache: "no-store",
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`gemini_http_${res.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+  }
+  return geminiText((await res.json()) as GeminiResponse);
+}
+
+async function claudeVisionComplete(req: AiVisionRequest): Promise<string> {
+  const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY! });
+  const isPdf = req.media.mediaType === "application/pdf";
+  const mediaBlock = isPdf
+    ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: req.media.data } }
+    : { type: "image" as const, source: { type: "base64" as const, media_type: req.media.mediaType as any, data: req.media.data } };
+  const msg = await client.messages.create({
+    model: req.claudeModel || "claude-haiku-4-5-20251001",
+    max_tokens: req.maxTokens ?? 1024,
+    ...(req.system ? { system: req.system } : {}),
+    messages: [{ role: "user", content: [mediaBlock, { type: "text", text: req.prompt }] }],
+  });
+  return msg.content
+    .filter((b) => b.type === "text")
+    .map((b) => (b as any).text)
+    .join("");
+}
+
+/**
+ * Vision completion over a single image or PDF. Tries Gemini Flash (free
+ * tier) first when a GEMINI_API_KEY is configured, then falls back to Claude.
+ * Local Ollama is skipped: the local Gemma text model doesn't take images.
+ * `preferredOverride` ("gemini" | "claude", e.g. from `requestedProvider`)
+ * puts that provider first for this call; "ollama" is ignored.
+ */
+export async function aiVisionComplete(req: AiVisionRequest, preferredOverride?: ProviderId): Promise<AiCompletion> {
+  let lastErr = "";
+  const order: Array<"gemini" | "claude"> =
+    preferredOverride === "claude" ? ["claude", "gemini"] : ["gemini", "claude"];
+  for (const p of order) {
+    if (p === "gemini" && GEMINI_API_KEY) {
+      try {
+        return { text: await geminiVisionComplete(req), source: "gemini-flash" };
+      } catch (e: any) {
+        lastErr = String(e?.message ?? e);
+      }
+    }
+    if (p === "claude" && ANTHROPIC_API_KEY) {
+      try {
+        return { text: await claudeVisionComplete(req), source: "claude-live" };
+      } catch (e: any) {
+        lastErr = String(e?.message ?? e);
+      }
+    }
+  }
+  throw new AiUnavailableError(
+    GEMINI_API_KEY || ANTHROPIC_API_KEY ? "all_providers_failed" : "no_vision_provider_configured",
+    lastErr || "No vision-capable AI provider is configured (need GEMINI_API_KEY or ANTHROPIC_API_KEY).",
+  );
 }
 
 /**

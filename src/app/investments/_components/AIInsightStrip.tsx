@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Sparkles, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
 
 type AIInsightStripProps = {
   trigger: number;                  // bump this to re-fire (use a counter)
@@ -56,7 +57,7 @@ export function AIInsightStrip({
       try {
         const res = await fetch("/api/investments/quick-insight", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
           signal,
           body: JSON.stringify({
             horizonYears,

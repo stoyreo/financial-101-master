@@ -10,6 +10,8 @@ import { cn, pct } from "@/lib/utils";
 import type { FundInfo } from "@/lib/fund-registry";
 import { ForecastCollapse } from "./ForecastCollapse";
 import { TokenUsageStamp } from "./TokenUsageStamp";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 // ── Generic AI Return Forecast card ───────────────────────────────────────────
 // Works for ANY fund in the registry (built-in example funds or a user's own
@@ -150,7 +152,7 @@ export function FundForecastCard({ fund, onApply, hasMatchingAccounts = false }:
     setStatus("loading");
     fetch("/api/investments/fund-forecast", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
       body: JSON.stringify({ fund }),
     })
       .then(r => r.json())
@@ -232,10 +234,13 @@ export function FundForecastCard({ fund, onApply, hasMatchingAccounts = false }:
               Get an AI-generated return estimate for {fund.code}
               {hasHistory ? ` based on ${years} years of fund history.` : "."}
             </p>
-            <Button size="sm" onClick={fetchForecast}>
-              <Sparkles size={13} />
-              Generate AI forecast
-            </Button>
+            <div className="flex items-center gap-2">
+              <ModelPicker />
+              <Button size="sm" onClick={fetchForecast}>
+                <Sparkles size={13} />
+                Generate AI forecast
+              </Button>
+            </div>
           </div>
         )}
 

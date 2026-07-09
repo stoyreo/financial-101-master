@@ -5,13 +5,11 @@
  * Auto-creates an expense transaction in the caller's store (via client).
  */
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { aiVisionComplete, requestedProvider } from "@/lib/ai-provider";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const client = new Anthropic();
 
 export async function POST(req: Request) {
   const supabase = getSupabaseServer();
@@ -54,28 +52,14 @@ Rules:
 - category should best match the merchant/description
 - confidence: 1.0 if all fields clearly visible, lower if unsure`;
 
-  const response = await client.messages.create({
-    model: "claude-opus-4-5",
-    max_tokens: 512,
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif",
-              data: image,
-            },
-          },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-  });
-
-  const raw = (response.content[0] as { type: string; text: string }).text ?? "";
+  // Gemini Flash (free tier) first, Claude Opus as fallback.
+  const { text: raw } = await aiVisionComplete({
+    prompt,
+    media: { mediaType, data: image },
+    maxTokens: 512,
+    json: true,
+    claudeModel: "claude-opus-4-5",
+  }, requestedProvider(req));
 
   let extracted: Record<string, unknown>;
   try {

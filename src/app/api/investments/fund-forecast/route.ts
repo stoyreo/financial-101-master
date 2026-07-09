@@ -30,7 +30,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { aiComplete, extractJson } from "@/lib/ai-provider";
+import { aiComplete, extractJson, requestedProvider } from "@/lib/ai-provider";
 import { fundSummaryForPrompt, type FundInfo, type AssetClass } from "@/lib/fund-registry";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
@@ -171,7 +171,7 @@ Return strict JSON only — no prose, no markdown.`;
       maxTokens: 800,
       json: true,
       claudeModel: "claude-sonnet-4-6",
-    });
+    }, requestedProvider(req));
 
     // Token usage / rate-limit headers aren't exposed through the unified
     // provider (and don't apply to local Ollama), so report them as null.

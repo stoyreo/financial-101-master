@@ -44,6 +44,7 @@ import {
 } from "@/lib/store";
 import { useAiSnapshotContext } from "@/lib/ai-snapshot-context";
 import { useAiStatus } from "@/lib/ai-status";
+import { useAiModelPref } from "@/lib/ai-model-pref";
 import { buildGeneralChatSnapshot, buildFullPlanContext, describeSnapshot, type GeneralChatSnapshot, type FullPlanInput } from "@/lib/ai-chat-context";
 
 const SESSION_POLL_MS = 2000;
@@ -101,7 +102,7 @@ function useGeneralSnapshot(active: boolean): GeneralChatSnapshot | null {
 }
 
 const OLLAMA_MODELS = ["gemma4", "gemma3", "llama3.2", "mistral", "phi4"];
-type AiProvider = "ollama" | "claude";
+type AiProvider = "ollama" | "gemini" | "claude";
 
 export default function GlobalAiAvatar() {
   const signedIn = useSignedIn();
@@ -111,7 +112,10 @@ export default function GlobalAiAvatar() {
   const [autoMic, setAutoMic] = useState(false);
   const [status, setStatus] = useState("Ready to help");
   const [load, setLoad] = useState(12);
-  const [provider, setProvider] = useState<AiProvider>("ollama");
+  // Provider choice is the app-wide shared preference (same one every
+  // ModelPicker next to AI buttons uses), so the avatar stays in sync.
+  const [modelPref, setModelPref] = useAiModelPref();
+  const provider: AiProvider = modelPref === "auto" ? "gemini" : modelPref;
   const [ollamaModel, setOllamaModel] = useState("gemma4");
 
   const profile = useStore(s => s.profile);
@@ -278,12 +282,14 @@ export default function GlobalAiAvatar() {
           {/* Provider / model selector */}
           <div className="flex items-center gap-1.5 px-1 shrink-0 pb-2">
             <select
-              value={provider}
-              onChange={e => setProvider(e.target.value as AiProvider)}
+              value={modelPref}
+              onChange={e => setModelPref(e.target.value as typeof modelPref)}
               className="flex-1 rounded-md px-2 py-1 text-[10px] font-medium outline-none cursor-pointer"
               style={{ background: "rgba(37,99,235,0.2)", border: "1px solid rgba(96,165,250,0.25)", color: "#93c5fd" }}
             >
+              <option value="auto">Auto (Gemini → local → Claude)</option>
               <option value="ollama">Ollama (local)</option>
+              <option value="gemini">Gemini Flash (free)</option>
               <option value="claude">Anthropic Claude</option>
             </select>
             {provider === "ollama" && (

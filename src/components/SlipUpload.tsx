@@ -18,6 +18,8 @@ import { v4 as uuid } from "uuid";
 import type { Transaction } from "@/lib/types";
 import { getCurrentAccount } from "@/lib/accounts";
 import { buildDedupeKey, toMerchantKey, matchRule, buildDefaultMerchantRules } from "@/lib/categorize";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 interface SlipResult {
   amount: number;
@@ -64,7 +66,7 @@ export function SlipUpload() {
       try {
         const res = await fetch("/api/slips/ocr", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
           body: JSON.stringify({ image: base64, mediaType }),
         });
 
@@ -150,6 +152,7 @@ export function SlipUpload() {
       <CardHeader>
         <CardTitle className="text-sm flex items-center gap-2">
           <Receipt size={15} className="text-primary" /> Slip Upload (PromptPay / QR)
+          <ModelPicker visionOnly className="ml-auto" />
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">

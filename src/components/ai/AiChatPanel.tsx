@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Sparkles, Send, X, RotateCcw, Mic, MicOff, Volume2, VolumeX } from "lucide-react";
 import { useAiStatus } from "@/lib/ai-status";
+import { useAiModelPref } from "@/lib/ai-model-pref";
+import ModelPicker from "./ModelPicker";
 import type { ThrowTarget } from "./HumanoidDragAgent";
 import type { Profile } from "@/lib/types";
 
@@ -19,7 +21,7 @@ export interface AiChatPanelProps {
   pendingTarget?: ThrowTarget | null;
   onConsumeTarget?: () => void;
   quickActions?: Array<{ label: string; sub?: string; prompt: string }>;
-  provider?: "ollama" | "claude";
+  provider?: "ollama" | "gemini" | "claude";
   ollamaModel?: string;
   hideHeader?: boolean;
   autoActivateMic?: boolean;
@@ -146,7 +148,7 @@ const MIC_WAVE = [0.5, 1, 0.7, 0.9, 0.4, 0.8, 0.6];
 export function AiChatPanel({
   snapshot, snapshotLabel, pendingTarget, onConsumeTarget,
   quickActions = DEFAULT_QUICK_ACTIONS,
-  provider = "ollama",
+  provider = "gemini",
   ollamaModel = "gemma4",
   hideHeader = false,
   autoActivateMic = false,
@@ -155,6 +157,11 @@ export function AiChatPanel({
   fullPlanContext,
 }: AiChatPanelProps) {
   const { available: aiAvailable } = useAiStatus();
+
+  // User's model choice from the shared ModelPicker. "auto" defers to the
+  // `provider` prop; anything else overrides it for every send.
+  const [modelPref] = useAiModelPref();
+  const effProvider: "ollama" | "gemini" | "claude" = modelPref === "auto" ? provider : modelPref;
 
   const WELCOME_MSG: ChatMsg = {
     id: nextId(), role: "assistant",
@@ -272,7 +279,7 @@ export function AiChatPanel({
     setMessages(prev => [...prev, userMsg, { id: assistantId, role: "assistant", content: "", pending: true }]);
     setInput("");
     setStreaming(true);
-    if (provider === "ollama") startProgressBar();
+    if (effProvider === "ollama") startProgressBar();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -310,7 +317,7 @@ export function AiChatPanel({
     ].filter(Boolean).join("\n\n");
 
     try {
-      if (provider === "ollama") {
+      if (effProvider === "ollama") {
         const res = await fetch("http://localhost:11434/api/chat", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -357,7 +364,7 @@ export function AiChatPanel({
           body: JSON.stringify({
             messages: apiMessages, context: snapshot ?? null,
             action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
-            provider: "claude",
+            provider: effProvider, // "gemini" | "claude" — ollama path handled above
             profile: profile ?? null,
             fullPlanContext: fullPlanContext ?? null,
           }),
@@ -386,7 +393,7 @@ export function AiChatPanel({
 
     } catch (e: any) {
       if (e?.name === "AbortError") { stopProgressBar(false); return; }
-      const isOllamaErr = provider === "ollama" &&
+      const isOllamaErr = effProvider === "ollama" &&
         (e?.message?.includes("Failed to fetch") || e?.message?.includes("Ollama") || e?.message?.includes("fetch"));
       stopProgressBar(false);
       setMessages(prev => prev.map(m => m.id === assistantId
@@ -401,7 +408,7 @@ export function AiChatPanel({
       setStreaming(false);
       abortRef.current = null;
     }
-  }, [messages, snapshot, streaming, provider, ollamaModel, listening, stopListening, startProgressBar, stopProgressBar]);
+  }, [messages, snapshot, streaming, effProvider, ollamaModel, listening, stopListening, startProgressBar, stopProgressBar]);
 
   useEffect(() => {
     if (!pendingTarget) return;
@@ -420,7 +427,7 @@ export function AiChatPanel({
 
   const onSubmit = useCallback((e: React.FormEvent) => { e.preventDefault(); send(input); }, [input, send]);
 
-  const showProgress = streaming && provider === "ollama" && ollamaProgress > 0 && ollamaProgress < 100;
+  const showProgress = streaming && effProvider === "ollama" && ollamaProgress > 0 && ollamaProgress < 100;
 
   return (
     <div className="ai-chat-panel flex flex-col flex-1 min-h-0 rounded-xl overflow-hidden border" style={{ background: "rgba(15,23,42,0.55)", borderColor: "rgba(96,165,250,0.16)" }}>
@@ -443,6 +450,7 @@ export function AiChatPanel({
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <ModelPicker bare className="mr-1" />
             {streaming && (
               <button onClick={stop} className="rounded-md p-1.5 transition-colors hover:bg-white/10" title="Stop">
                 <X className="h-3.5 w-3.5" style={{ color: "#94a3b8" }} />

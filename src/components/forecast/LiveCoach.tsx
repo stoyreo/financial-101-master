@@ -18,6 +18,8 @@ import {
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from "@/components/ui";
 import { useStore } from "@/lib/store";
 import { calcAge } from "@/lib/utils";
+import { aiProviderHeaders } from "@/lib/ai-model-pref";
+import ModelPicker from "@/components/ai/ModelPicker";
 
 interface CoachAlert {
   severity: "info" | "warning" | "critical";
@@ -127,7 +129,7 @@ export function LiveCoach() {
     try {
       const res = await fetch("/api/coach/forecast", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...aiProviderHeaders() },
         body: JSON.stringify({
           profile: {
             age: ageNow,
@@ -184,6 +186,7 @@ export function LiveCoach() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <ModelPicker />
             {result && (
               <button
                 onClick={() => setCollapsed(c => !c)}

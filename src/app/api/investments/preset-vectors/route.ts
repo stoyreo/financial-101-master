@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { aiComplete, extractJson } from "@/lib/ai-provider";
+import { aiComplete, extractJson, requestedProvider } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -75,7 +75,7 @@ Return strict JSON only.`;
       maxTokens: 600,
       json: true,
       claudeModel: "claude-sonnet-4-6",
-    });
+    }, requestedProvider(req));
     const jsonStr = extractJson(text);
 
     let parsed: any;

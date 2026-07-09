@@ -11,7 +11,7 @@
  * Response: plain text stream of the insight sentence.
  */
 
-import { aiStream, AiUnavailableError } from "@/lib/ai-provider";
+import { aiStream, AiUnavailableError, requestedProvider } from "@/lib/ai-provider";
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +70,7 @@ ${accountLines}`;
       messages: [{ role: "user", content: userPrompt }],
       maxTokens: 80,
       claudeModel: "claude-haiku-4-5-20251001",
-    });
+    }, requestedProvider(req));
 
     return new Response(stream, {
       headers: {
