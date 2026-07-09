@@ -33,7 +33,11 @@ import { extractJson, repairJsonLenient, requestedProvider } from "@/lib/ai-prov
 import { requireAiUser } from "@/lib/ai-route-guard";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 60s was NOT enough on Vercel: a grounded Gemini attempt (up to 45s) plus the
+// in-request Claude fallback (~35s) can run ~80s total, and the platform was
+// killing the function mid-scan (gateway 504). Fluid Compute allows this on
+// Hobby. The client aborts at 90s, so 120 is headroom, not extra waiting.
+export const maxDuration = 120;
 
 const MODEL = "claude-haiku-4-5-20251001";
 const MAX_WEB_SEARCHES = 4; // hard cap → bounds token/cost per click
