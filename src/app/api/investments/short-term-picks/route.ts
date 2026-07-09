@@ -268,6 +268,7 @@ Return STRICT JSON only as specified.`;
     // Returns the same shape as the Claude attempt so all downstream handling
     // (retry, clamping, source merging) is provider-agnostic.
     const attemptGeminiScan = async () => {
+      const t0 = Date.now();
       const res = await fetch(
         `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
         {
@@ -288,11 +289,12 @@ Return STRICT JSON only as specified.`;
             },
           }),
           cache: "no-store",
-          // The client aborts at 90s; stay just inside it so a slow Gemini
-          // answer surfaces a real server error instead of a client abort.
-          signal: AbortSignal.timeout(85_000),
+          // Grounded Gemini latency is erratic. Cap it at 45s so there is
+          // still room to fall back to Claude inside the client's 90s abort.
+          signal: AbortSignal.timeout(45_000),
         },
       );
+      console.log(`short-term-picks: gemini responded in ${Date.now() - t0}ms (HTTP ${res.status})`);
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
         throw new Error(`gemini_http_${res.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`);
@@ -408,28 +410,42 @@ Return STRICT JSON only as specified.`;
       return { parsed, citationSources, usage, textOut, stopReason: (msg as any)?.stop_reason ?? null };
     };
 
-    const attemptScan = useGemini ? attemptGeminiScan : attemptClaudeScan;
+    const isUsable = (a: { parsed: any } | null) =>
+      !!(a && a.parsed && typeof a.parsed === "object" && Array.isArray(a.parsed.picks) && a.parsed.picks.length > 0);
 
-    const isUsable = (a: { parsed: any }) =>
-      a.parsed && typeof a.parsed === "object" && Array.isArray(a.parsed.picks) && a.parsed.picks.length > 0;
-
-    // Attempt once; auto-retry ONCE server-side before surfacing an error.
-    let attempt = await attemptScan();
-    if (!isUsable(attempt)) {
-      console.warn("short-term-picks: first attempt returned no usable scan; retrying once.", {
-        stopReason: attempt.stopReason,
-      });
-      attempt = await attemptScan();
+    // Gemini first when selected, but grounded Gemini latency/quality is
+    // erratic — on timeout, error, or unusable output, fall back to Claude in
+    // the SAME request (when keyed) so the user still gets a scan.
+    let usedGemini = useGemini;
+    let attempt: Awaited<ReturnType<typeof attemptClaudeScan>> | null = null;
+    if (useGemini) {
+      try {
+        attempt = await attemptGeminiScan();
+      } catch (e: any) {
+        if (!apiKey) throw e; // no Claude to fall back to — surface the Gemini error
+        console.warn("short-term-picks: gemini attempt failed; falling back to Claude.", String(e?.message ?? e));
+      }
+      if (!isUsable(attempt) && apiKey) {
+        if (attempt) console.warn("short-term-picks: gemini returned no usable scan; falling back to Claude.");
+        usedGemini = false;
+        attempt = await attemptClaudeScan();
+      }
+    } else {
+      attempt = await attemptClaudeScan();
+      // Auto-retry ONCE server-side before surfacing an error.
+      if (!isUsable(attempt)) {
+        console.warn("short-term-picks: first attempt returned no usable scan; retrying once.", {
+          stopReason: attempt.stopReason,
+        });
+        attempt = await attemptClaudeScan();
+      }
     }
 
-    const { citationSources, usage } = attempt;
-    let parsed = attempt.parsed;
-
     if (!isUsable(attempt)) {
-      const truncated = attempt.stopReason === "max_tokens";
-      console.error("short-term-picks: parse_failed after retry.", {
-        stopReason: attempt.stopReason,
-        rawPreview: attempt.textOut.slice(0, 1200),
+      const truncated = attempt?.stopReason === "max_tokens";
+      console.error("short-term-picks: parse_failed after retry/fallback.", {
+        stopReason: attempt?.stopReason,
+        rawPreview: (attempt?.textOut ?? "").slice(0, 1200),
       });
       return NextResponse.json(
         {
@@ -438,11 +454,14 @@ Return STRICT JSON only as specified.`;
           message: truncated
             ? "The scan was cut off before finishing. Please try again."
             : "The AI responded but didn't return a usable scan. Please try again.",
-          raw: attempt.textOut,
+          raw: attempt?.textOut ?? "",
         },
         { status: 502 },
       );
     }
+
+    const { citationSources, usage } = attempt!;
+    let parsed = attempt!.parsed;
 
     // Clamp / sanitize numeric fields so a sloppy model answer can't break the
     // client-side gauge or Monte Carlo simulation.
@@ -472,7 +491,7 @@ Return STRICT JSON only as specified.`;
     }
     parsed.sources = Array.from(merged.values());
 
-    return NextResponse.json({ ...parsed, usage, source: useGemini ? "gemini-flash" : "claude-live" });
+    return NextResponse.json({ ...parsed, usage, source: usedGemini ? "gemini-flash" : "claude-live" });
   } catch (e: any) {
     console.error("short-term-picks error:", e);
     const raw = String(e?.message ?? "");
