@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import "./globals.css";
+import "@/styles/responsive-fold.css";
 import { Providers } from "./providers";
 import SyncStatusBar from "@/components/SyncStatusBar";
+import PwaManager from "@/components/pwa/PwaManager";
 import { AiStatusProvider } from "@/lib/ai-status";
 import { AiSnapshotProvider } from "@/lib/ai-snapshot-context";
 
@@ -25,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -39,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <AutoSync />
             <SyncStatusBar />
             <GlobalAiAvatar />
+            <PwaManager />
           </AiSnapshotProvider>
         </AiStatusProvider>
       </body>
