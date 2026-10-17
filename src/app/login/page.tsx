@@ -144,13 +144,16 @@ function LoginPageInner() {
       }
 
       try {
+        // Identity is taken from the verified access token server-side.
         await fetch("/api/auth/ensure-app-user", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: data.user.email,
-            supabaseUserId: data.user.id,
-          }),
+          headers: {
+            "Content-Type": "application/json",
+            ...(data.session?.access_token
+              ? { Authorization: `Bearer ${data.session.access_token}` }
+              : {}),
+          },
+          body: "{}",
         });
       } catch {
         // Non-fatal

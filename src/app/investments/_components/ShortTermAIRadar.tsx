@@ -786,6 +786,7 @@ export function ShortTermAIRadar({ userId = "", riskProfile = "moderate" }: { us
               outputTokens={result.usage?.outputTokens ?? null}
               remainingTokens={null}
               tokenLimit={null}
+              model={result.usage?.model ?? null}
             />
           </>
         )}

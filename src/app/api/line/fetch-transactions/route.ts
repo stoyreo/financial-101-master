@@ -13,6 +13,9 @@
 
 import { NextResponse } from "next/server";
 import { v4 as uuid } from "uuid";
+import { requireUser } from "@/lib/server-auth";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { toMerchantKey } from "@/lib/categorize";
 import type { Transaction } from "@/lib/types";
 
@@ -72,7 +75,38 @@ function mapExpense(e: ExpenseOut, activeAccountId: string): Transaction {
   };
 }
 
+/**
+ * Returns the LINE UID saved in this user's synced data, or "" if none yet
+ * (e.g. they just connected LINE and the store hasn't synced up).
+ */
+async function getStoredLineUserId(storageKey: string): Promise<string> {
+  try {
+    const { data } = await getSupabaseAdmin()
+      .from("user_data")
+      .select("data")
+      .eq("storage_key", storageKey)
+      .maybeSingle();
+    const blob: any = data?.data ?? {};
+    return String(blob.lineUserId ?? blob.state?.lineUserId ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 export async function POST(req: Request) {
+  // 🔐 SECURITY FIX (2026-09-16): previously unauthenticated — anyone could
+  // fetch any LINE user's expenses by POSTing their lineUserId.
+  const auth = await requireUser();
+  if (!auth.ok) return auth.response;
+
+  const rl = checkRateLimit(`line-fetch:${auth.userId}`, 10, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "rate_limited", message: "Too many LINE sync requests — try again shortly." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    );
+  }
+
   try {
     const { lineUserId, activeAccountId } = (await req.json()) as {
       lineUserId?: string;
@@ -89,6 +123,18 @@ export async function POST(req: Request) {
       return NextResponse.json(
         { error: "active_account_id_required", message: "activeAccountId is required." },
         { status: 400 }
+      );
+    }
+
+    // Ownership check: if this account already has a LINE UID on file, the
+    // request must use that same UID. (Empty = LINE was just connected and the
+    // store hasn't synced yet; LINE UIDs are unguessable 33-char IDs.)
+    const storedLineUserId = await getStoredLineUserId(auth.storageKey);
+    if (storedLineUserId && storedLineUserId !== lineUserId.trim()) {
+      console.warn(`[line/fetch-transactions] SECURITY: user ${auth.userId} requested a LINE UID that isn't theirs`);
+      return NextResponse.json(
+        { error: "forbidden", message: "That LINE account isn't linked to you." },
+        { status: 403 }
       );
     }
 

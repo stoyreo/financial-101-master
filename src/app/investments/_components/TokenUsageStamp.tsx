@@ -5,6 +5,8 @@ interface TokenUsageStampProps {
   outputTokens: number | null;
   remainingTokens: number | null;
   tokenLimit: number | null;
+  /** Model id that produced the result (e.g. "gemini-2.5-flash"). Optional. */
+  model?: string | null;
 }
 
 /**
@@ -17,6 +19,7 @@ export function TokenUsageStamp({
   outputTokens,
   remainingTokens,
   tokenLimit,
+  model,
 }: TokenUsageStampProps) {
   if (inputTokens === null) {
     return null;
@@ -31,6 +34,7 @@ export function TokenUsageStamp({
     <div className="text-xs text-muted-foreground border-t border-border pt-2 mt-3 flex items-center justify-between flex-wrap gap-2">
       <span>
         Tokens: in {formatNum(inputTokens)} / out {formatNum(outputTokens)}
+        {model ? <span className="ml-2 rounded bg-muted px-1.5 py-0.5 font-mono">{model}</span> : null}
       </span>
       {remainingTokens !== null && tokenLimit !== null && (
         <span>

@@ -27,7 +27,7 @@ interface AuthGuardProps {
  * email actually matches the currently authenticated Supabase user — if not,
  * wipe the store + session before re-bridging.
  */
-async function bridgeLegacySession(supabaseUserId: string, email: string) {
+async function bridgeLegacySession(accessToken: string, email: string) {
   const existing = getSession();
   if (existing) {
     if (existing.email && email && existing.email.toLowerCase() === email.toLowerCase()) {
@@ -40,8 +40,12 @@ async function bridgeLegacySession(supabaseUserId: string, email: string) {
   try {
     const res = await fetch("/api/auth/ensure-app-user", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, supabaseUserId }),
+      // Server derives identity from this verified token — never from the body.
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: "{}",
     });
     if (!res.ok) return;
     const { appUser } = await res.json();
@@ -68,7 +72,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
         router.replace("/login");
       } else {
         // Ensure legacy session is always in sync with Supabase session
-        await bridgeLegacySession(session.user.id, session.user.email ?? "");
+        await bridgeLegacySession(session.access_token, session.user.email ?? "");
         // Hydrate from remote (/api/sync) once the session is confirmed.
         // Without this, isHydratedFromRemote stays false and saves are skipped.
         useStore.getState().loadUserNamespace();

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin, rowToAppUser } from "@/lib/supabase/admin";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { v4 as uuid } from "uuid";
 
 export const runtime = "nodejs";
@@ -8,29 +10,75 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/auth/ensure-app-user
  *
- * Finds or creates an app_users row for the given Supabase user.
- * Uses admin client to bypass RLS.
+ * Finds or creates the app_users row for the CURRENTLY SIGNED-IN Supabase user.
+ *
+ * 🔐 SECURITY FIX (2026-09-16): This route used to trust `email` and
+ * `supabaseUserId` from the request body with no authentication. Anyone could
+ * POST a victim's email and (a) receive their storageKey + profile, and
+ * (b) overwrite the victim's supabase_user_id with their own, which
+ * getAuthenticatedUserStorageKey() then used as a fallback lookup — i.e. full
+ * account takeover of the victim's financial data via /api/sync.
+ *
+ * Now:
+ *  - Identity comes ONLY from a verified Supabase session — either an
+ *    `Authorization: Bearer <access_token>` header or the Supabase auth cookie.
+ *    Any email/supabaseUserId in the body is ignored.
+ *  - An existing supabase_user_id link is never overwritten, unless the
+ *    previously linked Supabase auth user no longer exists (account re-created).
+ *  - The response never includes passwordHash. storageKey is returned only to
+ *    its verified owner (the legacy client session needs it).
  *
  * Resolution order:
  *  1. Find by supabase_user_id (fast path)
- *  2. Find by email + back-fill supabase_user_id
- *     (covers toy.theeranan@icloud.com and pre-Supabase accounts)
+ *  2. Find by verified email + link supabase_user_id (if unlinked / stale)
  *  3. Create new row with all required fields
  */
-export async function POST(request: NextRequest) {
-  let email = "";
-  let supabaseUserId = "";
-  try {
-    const body = await request.json();
-    email = (body.email ?? "").toLowerCase().trim();
-    supabaseUserId = (body.supabaseUserId ?? "").trim();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+
+type VerifiedUser = { id: string; email: string };
+
+async function getVerifiedUser(request: NextRequest): Promise<VerifiedUser | null> {
+  // Path 1: bearer access token (sent explicitly by login page / AuthGuard)
+  const authHeader = request.headers.get("authorization") ?? "";
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (match) {
+    const { data, error } = await getSupabaseAdmin().auth.getUser(match[1].trim());
+    if (!error && data.user?.id && data.user.email) {
+      return { id: data.user.id, email: data.user.email.toLowerCase().trim() };
+    }
+    return null; // a bad token is a hard fail — don't fall through to cookies
   }
 
-  if (!email || !supabaseUserId) {
-    return NextResponse.json({ error: "email and supabaseUserId required" }, { status: 400 });
+  // Path 2: Supabase auth cookie
+  try {
+    const { data, error } = await getSupabaseServer().auth.getUser();
+    if (!error && data.user?.id && data.user.email) {
+      return { id: data.user.id, email: data.user.email.toLowerCase().trim() };
+    }
+  } catch {
+    /* no cookie session */
   }
+  return null;
+}
+
+function publicAppUser(row: any) {
+  const { passwordHash: _omit, ...rest } = rowToAppUser(row);
+  return rest;
+}
+
+export async function POST(request: NextRequest) {
+  const rl = checkRateLimit(`ensure-app-user:${getClientIp(request)}`, 30, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { ok: false, error: "rate_limited" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds) } },
+    );
+  }
+
+  const user = await getVerifiedUser(request);
+  if (!user) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  const { id: supabaseUserId, email } = user;
 
   try {
     const db = getSupabaseAdmin();
@@ -43,10 +91,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (byUid) {
-      return NextResponse.json({ ok: true, appUser: rowToAppUser(byUid) });
+      return NextResponse.json({ ok: true, appUser: publicAppUser(byUid) });
     }
 
-    // Path 2: existing row matched by email — back-fill supabase_user_id
+    // Path 2: existing row matched by the VERIFIED email
     const { data: byEmail } = await db
       .from("app_users")
       .select("*")
@@ -54,13 +102,33 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (byEmail) {
-      await db
-        .from("app_users")
-        .update({ supabase_user_id: supabaseUserId })
-        .eq("id", byEmail.id);
+      const linkedId: string | null = byEmail.supabase_user_id || null;
+
+      if (linkedId && linkedId !== supabaseUserId) {
+        // Only re-link if the previously linked auth user is gone.
+        const { data: prev } = await db.auth.admin.getUserById(linkedId);
+        if (prev?.user) {
+          console.warn(
+            `[ensure-app-user] SECURITY: refusing to re-link app_user ${byEmail.id} ` +
+              `(linked to ${linkedId}) to ${supabaseUserId}`,
+          );
+          return NextResponse.json(
+            { ok: false, error: "account already linked to a different login" },
+            { status: 409 },
+          );
+        }
+      }
+
+      if (linkedId !== supabaseUserId) {
+        const { error: updErr } = await db
+          .from("app_users")
+          .update({ supabase_user_id: supabaseUserId })
+          .eq("id", byEmail.id);
+        if (updErr) console.error("[ensure-app-user] link update failed:", updErr.message);
+      }
       return NextResponse.json({
         ok: true,
-        appUser: rowToAppUser({ ...byEmail, supabase_user_id: supabaseUserId }),
+        appUser: publicAppUser({ ...byEmail, supabase_user_id: supabaseUserId }),
       });
     }
 
@@ -90,15 +158,12 @@ export async function POST(request: NextRequest) {
 
     if (createErr || !created) {
       console.error("[ensure-app-user] insert failed:", createErr?.message);
-      return NextResponse.json(
-        { ok: false, error: createErr?.message ?? "insert failed" },
-        { status: 500 },
-      );
+      return NextResponse.json({ ok: false, error: "could not create user" }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true, appUser: rowToAppUser(created) });
+    return NextResponse.json({ ok: true, appUser: publicAppUser(created) });
   } catch (err: any) {
     console.error("[ensure-app-user] unexpected error:", err);
-    return NextResponse.json({ ok: false, error: String(err?.message ?? err) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "server error" }, { status: 500 });
   }
 }
