@@ -150,7 +150,86 @@ export function buildGeneralChatSnapshot(input: {
   };
 }
 
-type AnyChatSnapshot = ActualsChatSnapshot | GeneralChatSnapshot;
+/**
+ * Tax page snapshot, including the RMF shortfall simulator — the figures
+ * someone would need to answer "what if I can't hit my RMF target?" entirely
+ * from this snapshot, without re-deriving anything.
+ */
+export interface TaxChatSnapshot {
+  kind: "tax";
+  grossIncome: number;
+  totalDeductions: number;
+  taxableIncome: number;
+  marginalRatePct: number;
+  plan: {
+    rmfTarget: number;
+    estimatedTax: number;
+    effectiveRatePct: number;
+  };
+  rmfSimulator: {
+    maxUsefulRMF: number;         // more RMF beyond this saves no extra tax (PVD/SSF cap already used up)
+    simulatedRMF: number;         // what the user says they might actually manage
+    estimatedTaxAtSimulated: number;
+    extraTaxVsPlan: number;       // estimatedTaxAtSimulated - plan.estimatedTax
+    netCashCostOfSimulatedRMF: number; // simulatedRMF - tax it saves vs contributing ฿0
+    monthlyAmountNeeded: number | null; // simulatedRMF spread over remaining months this year
+    monthsRemainingInYear: number;
+  };
+  withholding: {
+    taxWithheldYTD: number | null;      // total tax the user expects withheld this year
+    rmfDeclaredToHR: boolean;
+    amountOwedOrRefundAtFiling: number | null; // estimatedTaxAtSimulated - taxWithheldYTD
+  };
+  otherDeductions: { pvd: number; ssf: number; lifeAndHealthInsurance: number; mortgageInterest: number };
+}
+
+export function buildTaxChatSnapshot(input: {
+  tax: TaxAssumptions;
+  result: { grossIncome: number; totalDeductions: number; taxableIncome: number; marginalRate: number; estimatedTax: number; effectiveTaxRate: number; pvdDeduction: number; ssfDeduction: number; lifeInsuranceDeduction: number; healthInsuranceDeduction: number; mortgageInterestDeduction: number; maxUsefulRMF: number };
+  simulatedRMF: number;
+  simResult: { estimatedTax: number };
+  zeroRMFResult: { estimatedTax: number };
+  monthsRemainingInYear: number;
+}): TaxChatSnapshot {
+  const { tax, result, simulatedRMF, simResult, zeroRMFResult, monthsRemainingInYear } = input;
+  const taxSavedBySimRMF = zeroRMFResult.estimatedTax - simResult.estimatedTax;
+  const taxWithheldYTD = typeof tax.taxWithheldYTD === "number" && tax.taxWithheldYTD > 0 ? tax.taxWithheldYTD : null;
+
+  return {
+    kind: "tax",
+    grossIncome: round(result.grossIncome),
+    totalDeductions: round(result.totalDeductions),
+    taxableIncome: round(result.taxableIncome),
+    marginalRatePct: Math.round(result.marginalRate * 1000) / 10,
+    plan: {
+      rmfTarget: round(tax.rmfContribution),
+      estimatedTax: round(result.estimatedTax),
+      effectiveRatePct: Math.round(result.effectiveTaxRate * 1000) / 10,
+    },
+    rmfSimulator: {
+      maxUsefulRMF: round(result.maxUsefulRMF),
+      simulatedRMF: round(simulatedRMF),
+      estimatedTaxAtSimulated: round(simResult.estimatedTax),
+      extraTaxVsPlan: round(simResult.estimatedTax - result.estimatedTax),
+      netCashCostOfSimulatedRMF: round(simulatedRMF - taxSavedBySimRMF),
+      monthlyAmountNeeded: monthsRemainingInYear > 0 ? round(simulatedRMF / monthsRemainingInYear) : null,
+      monthsRemainingInYear,
+    },
+    withholding: {
+      taxWithheldYTD,
+      rmfDeclaredToHR: !!tax.rmfDeclaredToHR,
+      amountOwedOrRefundAtFiling: taxWithheldYTD != null ? round(simResult.estimatedTax - taxWithheldYTD) : null,
+    },
+    otherDeductions: {
+      pvd: round(result.pvdDeduction),
+      ssf: round(result.ssfDeduction),
+      lifeAndHealthInsurance: round(result.lifeInsuranceDeduction + result.healthInsuranceDeduction),
+      mortgageInterest: round(result.mortgageInterestDeduction),
+    },
+  };
+}
+
+type AnyChatSnapshot = ActualsChatSnapshot | GeneralChatSnapshot | TaxChatSnapshot;
 
 /** Human-readable one-liner shown in the panel header ("Looking at: June 2026 actuals"). */
 export function describeSnapshot(s: AnyChatSnapshot | null | undefined): string | null {
@@ -159,6 +238,9 @@ export function describeSnapshot(s: AnyChatSnapshot | null | undefined): string 
   if (s.kind === "general") {
     const scenario = s.scenarioName ? `${s.scenarioName} — ` : "";
     return `${scenario}net worth ฿${s.netWorth.toLocaleString()}, ฿${s.monthlySurplus.toLocaleString()}/mo surplus`;
+  }
+  if (s.kind === "tax") {
+    return `RMF shortfall sim — ฿${s.rmfSimulator.simulatedRMF.toLocaleString()} of ฿${s.rmfSimulator.maxUsefulRMF.toLocaleString()} useful RMF, ${s.rmfSimulator.extraTaxVsPlan > 0 ? `+฿${s.rmfSimulator.extraTaxVsPlan.toLocaleString()} tax` : "on plan"}`;
   }
   return null;
 }
@@ -253,7 +335,10 @@ export function buildFullPlanContext(plan: FullPlanInput): string {
   sections.push(
     `TAX ASSUMPTIONS (Thailand)\n` +
     `  • Gross income ${thb(t.annualGrossIncome)}/yr${t.annualBonus > 0 ? ` + bonus ${thb(t.annualBonus)}` : ""}\n` +
-    (deductions ? `  • Deductions: ${deductions}` : "")
+    (deductions ? `  • Deductions: ${deductions}\n` : "") +
+    (typeof t.taxWithheldYTD === "number" && t.taxWithheldYTD > 0
+      ? `  • Tax expected withheld this year: ${thb(t.taxWithheldYTD)}${t.rmfDeclaredToHR ? " (assumes the RMF plan above is declared to HR)" : " (RMF plan NOT yet declared to HR)"}`
+      : "")
   );
 
   // ── Scenarios ─────────────────────────────────────────────

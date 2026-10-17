@@ -102,7 +102,7 @@ function useGeneralSnapshot(active: boolean): GeneralChatSnapshot | null {
 }
 
 const OLLAMA_MODELS = ["gemma4", "gemma3", "llama3.2", "mistral", "phi4"];
-type AiProvider = "ollama" | "gemini" | "claude";
+type AiProvider = "ollama" | "gemini" | "gemini-mini" | "claude";
 
 export default function GlobalAiAvatar() {
   const signedIn = useSignedIn();
@@ -290,6 +290,7 @@ export default function GlobalAiAvatar() {
               <option value="auto">Auto (Gemini → local → Claude)</option>
               <option value="ollama">Ollama (local)</option>
               <option value="gemini">Gemini Flash (free)</option>
+              <option value="gemini-mini">Gemini Mini (Flash-Lite)</option>
               <option value="claude">Anthropic Claude</option>
             </select>
             {provider === "ollama" && (

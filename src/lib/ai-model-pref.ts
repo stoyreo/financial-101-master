@@ -16,7 +16,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type AiModelPref = "auto" | "ollama" | "gemini" | "claude";
+export type AiModelPref = "auto" | "ollama" | "gemini" | "gemini-mini" | "claude";
 
 const KEY = "ai-model-pref-v1";
 const EVENT = "ai-model-pref-changed";
@@ -25,7 +25,7 @@ export function getAiModelPref(): AiModelPref {
   if (typeof window === "undefined") return "auto";
   try {
     const v = sessionStorage.getItem(KEY);
-    return v === "ollama" || v === "gemini" || v === "claude" ? v : "auto";
+    return v === "ollama" || v === "gemini" || v === "gemini-mini" || v === "claude" ? v : "auto";
   } catch {
     return "auto";
   }

@@ -28,8 +28,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 export type ProviderMessage = { role: "user" | "assistant"; content: string };
-export type AiSource = "ollama-gemma4" | "gemini-flash" | "claude-live";
-export type ProviderId = "ollama" | "gemini" | "claude";
+export type AiSource = "ollama-gemma4" | "gemini-flash" | "gemini-flash-lite" | "claude-live";
+export type ProviderId = "ollama" | "gemini" | "gemini-mini" | "claude";
 
 /**
  * Per-request provider override sent by the client (the ModelPicker UI puts
@@ -38,7 +38,7 @@ export type ProviderId = "ollama" | "gemini" | "claude";
  */
 export function requestedProvider(req: Request): ProviderId | undefined {
   const v = (req.headers.get("x-ai-provider") || "").toLowerCase();
-  return v === "ollama" || v === "gemini" || v === "claude" ? v : undefined;
+  return v === "ollama" || v === "gemini" || v === "gemini-mini" || v === "claude" ? v : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,6 +50,10 @@ const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "gemma4";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+// "Gemini Mini" — the smaller/cheaper Flash-Lite tier, selectable alongside
+// the main Gemini, Ollama and Claude providers in the chat panel's model
+// picker so the user can consult it directly with the full RMF/tax snapshot.
+const GEMINI_MINI_MODEL = process.env.GEMINI_MINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_BASE_URL = (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta").replace(/\/+$/, "");
 const PREFERRED: ProviderId = (() => {
   const v = (process.env.AI_PROVIDER || "gemini").toLowerCase();
@@ -61,6 +65,7 @@ export const aiConfig = {
   ollamaBaseUrl: OLLAMA_BASE_URL,
   ollamaModel: OLLAMA_MODEL,
   geminiModel: GEMINI_MODEL,
+  geminiMiniModel: GEMINI_MINI_MODEL,
   preferred: PREFERRED,
   hasAnthropicKey: !!ANTHROPIC_API_KEY,
   hasGeminiKey: !!GEMINI_API_KEY,
@@ -231,9 +236,9 @@ type GeminiPart =
   | { text: string }
   | { inline_data: { mime_type: string; data: string } };
 
-function geminiUrl(action: "generateContent" | "streamGenerateContent", stream = false): string {
+function geminiUrl(action: "generateContent" | "streamGenerateContent", stream = false, model: string = GEMINI_MODEL): string {
   const suffix = stream ? "?alt=sse&" : "?";
-  return `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:${action}${suffix}key=${GEMINI_API_KEY}`;
+  return `${GEMINI_BASE_URL}/models/${model}:${action}${suffix}key=${GEMINI_API_KEY}`;
 }
 
 function geminiBody(req: AiRequest): string {
@@ -261,8 +266,8 @@ function geminiText(data: GeminiResponse): string {
     .join("");
 }
 
-async function geminiComplete(req: AiRequest): Promise<string> {
-  const res = await fetch(geminiUrl("generateContent"), {
+async function geminiComplete(req: AiRequest, model: string = GEMINI_MODEL): Promise<string> {
+  const res = await fetch(geminiUrl("generateContent", false, model), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: geminiBody(req),
@@ -276,8 +281,8 @@ async function geminiComplete(req: AiRequest): Promise<string> {
   return geminiText((await res.json()) as GeminiResponse);
 }
 
-async function geminiStream(req: AiRequest): Promise<ReadableStream<Uint8Array>> {
-  const res = await fetch(geminiUrl("streamGenerateContent", true), {
+async function geminiStream(req: AiRequest, model: string = GEMINI_MODEL): Promise<ReadableStream<Uint8Array>> {
+  const res = await fetch(geminiUrl("streamGenerateContent", true, model), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: geminiBody(req),
@@ -481,6 +486,10 @@ export async function aiComplete(req: AiRequest, preferredOverride?: ProviderId)
         if (!GEMINI_API_KEY) continue;
         return { text: await geminiComplete(req), source: "gemini-flash" };
       }
+      if (p === "gemini-mini") {
+        if (!GEMINI_API_KEY) continue;
+        return { text: await geminiComplete(req, GEMINI_MINI_MODEL), source: "gemini-flash-lite" };
+      }
       if (p === "claude") {
         if (!ANTHROPIC_API_KEY) continue;
         return { text: await claudeComplete(req), source: "claude-live" };
@@ -513,6 +522,10 @@ export async function aiStream(req: AiRequest, preferredOverride?: ProviderId): 
       if (p === "gemini") {
         if (!GEMINI_API_KEY) continue;
         return { stream: await geminiStream(req), source: "gemini-flash" };
+      }
+      if (p === "gemini-mini") {
+        if (!GEMINI_API_KEY) continue;
+        return { stream: await geminiStream(req, GEMINI_MINI_MODEL), source: "gemini-flash-lite" };
       }
       if (p === "claude") {
         if (!ANTHROPIC_API_KEY) continue;

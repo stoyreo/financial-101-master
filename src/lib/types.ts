@@ -157,6 +157,9 @@ export interface TaxAssumptions {
   childDeduction: number;          // 30,000 per child
   otherDeductions: number;
   annualBonus: number;
+  // Withholding / filing — used by the RMF shortfall simulator on the Tax page.
+  taxWithheldYTD?: number;         // total tax expected to be withheld this year (payroll), THB
+  rmfDeclaredToHR?: boolean;       // whether the RMF plan above was declared on ล.ย.01 (withholding already assumes it)
 }
 
 // ── Scenarios ────────────────────────────────────────────

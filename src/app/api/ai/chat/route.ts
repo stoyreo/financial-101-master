@@ -136,7 +136,7 @@ export async function POST(req: Request) {
   const messages: ChatMessage[] = Array.isArray(body?.messages) ? body.messages : [];
   const context = body?.context;
   const action = body?.action;
-  const clientProvider: string | undefined = body?.provider; // "ollama" | "gemini" | "claude"
+  const clientProvider: string | undefined = body?.provider; // "ollama" | "gemini" | "gemini-mini" | "claude"
   const clientModel: string | undefined = body?.model;
   const profile: Record<string, unknown> | null = body?.profile ?? null;
   const fullPlanContext: string | null = body?.fullPlanContext ?? null;
@@ -179,7 +179,7 @@ export async function POST(req: Request) {
         claudeModel: "claude-sonnet-4-6",
         ollamaModel: clientModel,
       },
-      clientProvider === "claude" || clientProvider === "gemini" || clientProvider === "ollama"
+      clientProvider === "claude" || clientProvider === "gemini" || clientProvider === "gemini-mini" || clientProvider === "ollama"
         ? clientProvider
         : requestedProvider(req),
     );

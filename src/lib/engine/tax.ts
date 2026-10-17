@@ -19,8 +19,7 @@
  *   - PVD: full contribution (max 15% of salary, max 500,000)
  *   - RMF: up to 30% of taxable income, max 500,000 (combined SSF/RMF/PVD ≤ 500,000)
  *   - SSF: up to 30% of taxable income, max 200,000
- *   - Life insurance: max 100,000
- *   - Health insurance: max 25,000
+ *   - Life insurance + health insurance: max 100,000 COMBINED (health alone capped at 25,000 within that)
  *   - Mortgage interest: max 100,000
  *   - Parental deduction: 30,000 per parent (max 2)
  *   - Child deduction: 30,000 per child (2nd+ 60,000)
@@ -106,6 +105,7 @@ export interface TaxResult {
   taxSavedByPVD: number;
   additionalRMFRoom: number;   // more you can contribute to save tax
   additionalSSFRoom: number;
+  maxUsefulRMF: number;        // most RMF that actually reduces tax, given current PVD/SSF
 }
 
 export function computeTax(t: TaxAssumptions): TaxResult {
@@ -128,11 +128,16 @@ export function computeTax(t: TaxAssumptions): TaxResult {
   // SSF: 30% of income, max 200,000
   const ssfDeduction = Math.min(t.ssfContribution, grossIncome * 0.30, 200_000, remainingBudget);
 
-  // Life insurance: max 100,000
+  // Life insurance: max 100,000, but life + health combined also capped at 100,000.
   const lifeInsuranceDeduction = Math.min(t.lifeInsurancePremium, 100_000);
 
-  // Health insurance: max 25,000
-  const healthInsuranceDeduction = Math.min(t.healthInsurancePremium, 25_000);
+  // Health insurance: max 25,000 on its own, and whatever room life insurance
+  // left under the shared ฿100,000 cap (Revenue Dept. rule: life + health ≤ 100,000).
+  const healthInsuranceDeduction = Math.min(
+    t.healthInsurancePremium,
+    25_000,
+    Math.max(0, 100_000 - lifeInsuranceDeduction)
+  );
 
   // Mortgage interest: max 100,000
   const mortgageInterestDeduction = Math.min(t.mortgageInterestDeduction, 100_000);
@@ -202,7 +207,44 @@ export function computeTax(t: TaxAssumptions): TaxResult {
     taxSavedByPVD,
     additionalRMFRoom,
     additionalSSFRoom,
+    maxUsefulRMF: maxRMF,
   };
+}
+
+/**
+ * RMF shortfall simulator — what tax results if the person only manages to
+ * actually invest `rmfAmount` in RMF instead of their full `t.rmfContribution`
+ * plan. Everything else (PVD, SSF, insurance, etc.) stays as entered.
+ */
+export function computeTaxAtRMF(t: TaxAssumptions, rmfAmount: number): TaxResult {
+  return computeTax({ ...t, rmfContribution: Math.max(0, rmfAmount) });
+}
+
+/**
+ * A short table of tax outcomes across a spread of RMF contribution levels,
+ * from 0 up to the most RMF that actually reduces tax (maxUsefulRMF) —
+ * powers the shortfall simulator's chart/table on the Tax page.
+ */
+export function buildRMFShortfallTable(
+  t: TaxAssumptions,
+  steps: number = 5
+): Array<{ rmfAmount: number; pctOfMax: number; estimatedTax: number; extraTaxVsPlan: number }> {
+  const planResult = computeTax(t);
+  const max = planResult.maxUsefulRMF;
+  const n = Math.max(1, steps);
+  const levels = Array.from({ length: n + 1 }, (_, i) => Math.round((max * (n - i)) / n));
+  // Always include the plan's own RMF contribution amount, deduplicated.
+  const withPlan = Array.from(new Set([...levels, Math.round(t.rmfContribution)])).sort((a, b) => b - a);
+
+  return withPlan.map(rmfAmount => {
+    const r = computeTaxAtRMF(t, rmfAmount);
+    return {
+      rmfAmount,
+      pctOfMax: max > 0 ? rmfAmount / max : 0,
+      estimatedTax: r.estimatedTax,
+      extraTaxVsPlan: r.estimatedTax - planResult.estimatedTax,
+    };
+  });
 }
 
 // ============================================================

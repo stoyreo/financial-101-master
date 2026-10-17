@@ -21,7 +21,7 @@ export interface AiChatPanelProps {
   pendingTarget?: ThrowTarget | null;
   onConsumeTarget?: () => void;
   quickActions?: Array<{ label: string; sub?: string; prompt: string }>;
-  provider?: "ollama" | "gemini" | "claude";
+  provider?: "ollama" | "gemini" | "gemini-mini" | "claude";
   ollamaModel?: string;
   hideHeader?: boolean;
   autoActivateMic?: boolean;
@@ -161,7 +161,7 @@ export function AiChatPanel({
   // User's model choice from the shared ModelPicker. "auto" defers to the
   // `provider` prop; anything else overrides it for every send.
   const [modelPref] = useAiModelPref();
-  const effProvider: "ollama" | "gemini" | "claude" = modelPref === "auto" ? provider : modelPref;
+  const effProvider: "ollama" | "gemini" | "gemini-mini" | "claude" = modelPref === "auto" ? provider : modelPref;
 
   const WELCOME_MSG: ChatMsg = {
     id: nextId(), role: "assistant",
@@ -364,7 +364,7 @@ export function AiChatPanel({
           body: JSON.stringify({
             messages: apiMessages, context: snapshot ?? null,
             action: action ? { type: action.action, label: action.label, context: action.context } : undefined,
-            provider: effProvider, // "gemini" | "claude" — ollama path handled above
+            provider: effProvider, // "gemini" | "gemini-mini" | "claude" — ollama path handled above
             profile: profile ?? null,
             fullPlanContext: fullPlanContext ?? null,
           }),

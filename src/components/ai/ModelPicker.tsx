@@ -8,10 +8,11 @@
  * stay in sync) and reaches the server as an `x-ai-provider` header.
  *
  * Options:
- *   auto   — server default fallback chain: Ollama → Gemini → Claude
- *   ollama — local Gemma via Ollama (hidden when `visionOnly`, no image support)
- *   gemini — Google Gemini Flash (free tier)
- *   claude — Anthropic Claude (paid API)
+ *   auto        — server default fallback chain: Ollama → Gemini → Claude
+ *   ollama      — local Gemma via Ollama (hidden when `visionOnly`, no image support)
+ *   gemini      — Google Gemini Flash (free tier)
+ *   gemini-mini — Google Gemini Flash-Lite (lighter/faster free-tier model)
+ *   claude      — Anthropic Claude (paid API)
  */
 
 import { Cpu } from "lucide-react";
@@ -32,6 +33,7 @@ const LABELS: Record<AiModelPref, string> = {
   auto: "Auto",
   ollama: "Gemma (local)",
   gemini: "Gemini Flash (free)",
+  "gemini-mini": "Gemini Mini (Flash-Lite)",
   claude: "Claude",
 };
 
@@ -39,8 +41,8 @@ export default function ModelPicker({ visionOnly, hideOllama, className, bare }:
   const [pref, setPref] = useAiModelPref();
   const noOllama = visionOnly || hideOllama;
   const options: AiModelPref[] = noOllama
-    ? ["auto", "gemini", "claude"]
-    : ["auto", "ollama", "gemini", "claude"];
+    ? ["auto", "gemini", "gemini-mini", "claude"]
+    : ["auto", "ollama", "gemini", "gemini-mini", "claude"];
 
   // If a text-only pick (ollama) is carried into a context that can't use it, show Auto.
   const value = noOllama && pref === "ollama" ? "auto" : pref;
