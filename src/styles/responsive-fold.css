@@ -1,0 +1,89 @@
+/* Financial 101 Master v3.10.0: phone + Galaxy Z Fold responsive layer.
+   Breakpoints are by CSS width, so they hold for any Fold model:
+   cover screen ~340-480px, inner screen ~600-1023px (near-square), desktop >= 1024px.
+   Uses :where() (zero specificity) wherever possible so existing Tailwind classes still win. */
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+/* 100vh is wrong on mobile when the URL bar shows/hides; use the dynamic viewport */
+.h-screen { height: 100vh; height: 100dvh; }
+.min-h-screen { min-height: 100vh; min-height: 100dvh; }
+
+/* Text always wraps: long names, emails, Thai runs without spaces */
+:where(h1, h2, h3, h4, h5, h6, p, li, dd, dt, label, td, th, a, span, div, button) {
+  overflow-wrap: anywhere;
+}
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p, li) { text-wrap: pretty; }
+:where(.truncate, .whitespace-nowrap, [class*="tabular-nums"]) { overflow-wrap: normal; }
+
+/* Flex/grid children default to min-width:auto, which pushes cards and text off-screen */
+:where(.flex, .inline-flex, .grid) > :where(*) { min-width: 0; }
+
+:where(img, svg, video, canvas) { max-width: 100%; }
+:where(img, video) { height: auto; }
+
+/* The scrolling <main> in AppShell must never scroll sideways */
+main { overflow-x: hidden; }
+
+/* Tables and charts scroll inside their own box instead of being clipped */
+:where(main) :where(table) { max-width: 100%; }
+.recharts-responsive-container, .recharts-wrapper { max-width: 100%; }
+
+@media (max-width: 767px) {
+  :where(main) :where(table) {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  :where(main) :where(td, th) { overflow-wrap: normal; }
+  /* 16px inputs stop Android/iOS from zooming the page when a field is focused */
+  :where(input, select, textarea) { font-size: max(16px, 1em); }
+}
+
+/* Galaxy Z Fold cover screen and other narrow phones */
+@media (max-width: 480px) {
+  main :where(.text-3xl) { font-size: 1.5rem; line-height: 2rem; }
+  main :where(.text-2xl) { font-size: 1.3rem; line-height: 1.8rem; }
+  main :where(.p-6) { padding: 1rem; }
+  main :where(.gap-6) { gap: 1rem; }
+}
+
+/* Unfolded inner screen: keep 3-4 column card grids readable at 2 columns */
+@media (min-width: 600px) and (max-width: 1023px) {
+  main :where(.lg\:grid-cols-3, .lg\:grid-cols-4, .xl\:grid-cols-4) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Half-folded (Flex Mode) with the hinge reported as two segments */
+@media (horizontal-viewport-segments: 2) {
+  main { padding-left: env(viewport-segment-left 0 0, 0px); }
+}
+
+/* Cover screen held sideways: give content the height */
+@media (max-height: 480px) and (orientation: landscape) {
+  :where(header.md\:hidden) { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+}
+
+/* Install / update bar */
+.pwa-bar {
+  position: fixed; z-index: 60; left: 12px; right: 12px;
+  bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-radius: 14px; background: #0B1330; color: #f8fafc;
+  border: 1px solid #1B254A; box-shadow: 0 10px 30px rgba(11, 19, 48, .35); font-size: .875rem; line-height: 1.35;
+}
+@media (min-width: 768px) { .pwa-bar { bottom: 16px; left: auto; max-width: 420px; } }
+.pwa-actions { display: flex; gap: 8px; margin-left: auto; }
+.pwa-btn {
+  min-height: 40px; padding: 0 14px; border-radius: 10px; border: 0; font-weight: 600;
+  background: #F4D27A; color: #0B1330; cursor: pointer; white-space: nowrap;
+}
+.pwa-btn-ghost { background: transparent; color: #cbd5e1; border: 1px solid #334155; }
+.pwa-btn:focus-visible { outline: 2px solid #F4D27A; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-bar { transition: none; }
+}

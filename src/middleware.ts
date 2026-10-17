@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
   // bouncing the LINE OAuth redirect to /login?code=...&state=...&redirectTo=
   // before the callback page could ever exchange the code — users got stuck
   // looping back to the login screen after approving LINE sign-in.
-  const publicPaths = ["/login", "/signup", "/auth/", "/api/", "/_next/", "/favicon.ico", "/line/view"];
+  const publicPaths = ["/login", "/signup", "/auth/", "/api/", "/_next/", "/favicon.ico", "/line/view", "/manifest.webmanifest", "/sw.js"];
   const isPublic = publicPaths.some((p) => pathname.startsWith(p));
 
   if (!session && !isPublic) {

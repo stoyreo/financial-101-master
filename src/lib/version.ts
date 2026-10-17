@@ -1,5 +1,5 @@
-export const APP_VERSION = "3.9.0";
-export const BUILD_DATE = "2026-07-09";
+export const APP_VERSION = "3.10.0";
+export const BUILD_DATE = "2026-10-03";
 
 // Format version with date for display: "v3.4.0 • May 12, 2026"
 export function getVersionDisplay(): string {
@@ -15,6 +15,16 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "3.10.0",
+    date: "2026-10-03",
+    changes: [
+      "Installable on Android: web app manifest, app icons, service worker and an Install app / Update now bar (Chrome and Samsung Internet)",
+      "Galaxy Z Fold and phone layout: text wraps everywhere, tables scroll inside their box, full-height layout uses the dynamic viewport, 2-column cards on the unfolded screen",
+      "Pinch-zoom re-enabled (removed maximum-scale / user-scalable=no) for accessibility",
+      "Service worker never caches API responses, auth or pages, so no cross-user data can be served offline",
+    ],
+  },
   {
     version: "3.9.0",
     date: "2026-07-09",
