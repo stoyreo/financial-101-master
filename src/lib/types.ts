@@ -160,6 +160,7 @@ export interface TaxAssumptions {
   // Withholding / filing — used by the RMF shortfall simulator on the Tax page.
   taxWithheldYTD?: number;         // total tax expected to be withheld this year (payroll), THB
   rmfDeclaredToHR?: boolean;       // whether the RMF plan above was declared on ล.ย.01 (withholding already assumes it)
+  rmfAlreadyInvested?: number;     // RMF already bought this calendar year, THB — the simulator's "remaining to invest" subtracts this
 }
 
 // ── Scenarios ────────────────────────────────────────────

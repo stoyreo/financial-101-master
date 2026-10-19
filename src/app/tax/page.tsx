@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { thb, pct, effectiveIncomeAmount } from "@/lib/utils";
-import { computeTax, computeTaxAtRMF, buildRMFShortfallTable, compareTaxVsDebt, PVD_BASE_OFFSET } from "@/lib/engine/tax";
+import { computeTax, computeTaxAtRMF, buildRMFShortfallTable, compareTaxVsDebt, computeThaiEsgRoom, PVD_BASE_OFFSET } from "@/lib/engine/tax";
 import type { TaxAssumptions } from "@/lib/types";
 import {
   Card, CardHeader, CardTitle, CardContent, Button, Input, Label,
@@ -78,10 +78,23 @@ export default function TaxPage() {
   const netCashCostOfSimRMF = simRMF - taxSavedBySimRMF;
   const extraTaxVsPlan = simResult.estimatedTax - result.estimatedTax;
   const monthsLeft = monthsRemainingInYear();
-  const monthlyNeeded = monthsLeft > 0 ? simRMF / monthsLeft : null;
+  const monthsElapsed = 12 - monthsLeft;
+  const rmfAlreadyInvested = typeof form.rmfAlreadyInvested === "number" ? Math.max(0, form.rmfAlreadyInvested) : 0;
+  const rmfStillToInvest = Math.max(0, simRMF - rmfAlreadyInvested);
+  const monthlyNeeded = monthsLeft > 0 ? rmfStillToInvest / monthsLeft : null;
   const shortfallTable = useMemo(() => buildRMFShortfallTable(form, 4), [form]);
   const taxWithheldYTD = typeof form.taxWithheldYTD === "number" ? form.taxWithheldYTD : 0;
   const owedOrRefundAtFiling = taxWithheldYTD > 0 ? simResult.estimatedTax - taxWithheldYTD : null;
+  const thaiEsgRoom = useMemo(() => computeThaiEsgRoom(result.grossIncome), [result.grossIncome]);
+
+  // "Estimate from plan" for the withholding field — Thai payroll typically
+  // spreads the year's projected tax evenly across paychecks, assuming
+  // whatever RMF was (or wasn't) declared on ล.ย.01.
+  const estimateWithholding = () => {
+    const baseline = form.rmfDeclaredToHR ? result.estimatedTax : zeroRMFResult.estimatedTax;
+    const estimate = Math.round((baseline * monthsElapsed) / 12);
+    setForm(f => ({ ...f, taxWithheldYTD: estimate }));
+  };
 
   const taxSnapshot = useMemo(
     () => buildTaxChatSnapshot({
@@ -91,9 +104,11 @@ export default function TaxPage() {
       simResult,
       zeroRMFResult,
       monthsRemainingInYear: monthsLeft,
+      rmfAlreadyInvested,
+      thaiEsgRoom,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [form, result, simRMF, simResult, zeroRMFResult, monthsLeft]
+    [form, result, simRMF, simResult, zeroRMFResult, monthsLeft, rmfAlreadyInvested, thaiEsgRoom]
   );
 
   useRegisterAiSnapshot(taxSnapshot, describeSnapshot(taxSnapshot), [
@@ -110,7 +125,7 @@ export default function TaxPage() {
     {
       label: "RMF vs ThaiESG for me",
       sub: "Which fits my situation better?",
-      prompt: "Given my income, tax bracket and RMF numbers in this snapshot, compare RMF and Thai ESG funds for my tax-saving strategy — contribution limits, lock-up period, and which makes more sense for me. Note any figures you're not certain are current.",
+      prompt: "Using the thaiEsg figures already in this snapshot (not your own recollection of the rules), compare RMF and Thai ESG funds for my tax-saving strategy — contribution room, lock-up period, and which makes more sense for me given my numbers here.",
     },
   ]);
 
@@ -256,7 +271,7 @@ export default function TaxPage() {
               <div>
                 <Label className="text-xs">Health Insurance (฿)</Label>
                 <Input {...field("healthInsurancePremium")} className="mt-1 text-sm" />
-                <p className="text-xs text-muted-foreground mt-0.5">Max 25,000</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Max 25,000, shared with life insurance below</p>
               </div>
               <div>
                 <Label className="text-xs">Mortgage Interest (฿)</Label>
@@ -268,6 +283,15 @@ export default function TaxPage() {
                 <Input {...field("otherDeductions")} className="mt-1 text-sm" />
               </div>
             </div>
+            {(result.lifeInsuranceDeduction + result.healthInsuranceDeduction) > 0 && (
+              <Alert variant="default" className="mt-1">
+                <div className="text-xs">
+                  <strong>Life + health insurance share one ฿100,000 cap</strong>, not 125,000 independently — health insurance
+                  is capped at ฿25,000 but only up to whatever room is left after life insurance inside that combined ฿100,000.
+                  Fixing this corrected an earlier estimate from ฿510,720 to the current {thb(result.estimatedTax)} tax figure.
+                </div>
+              </Alert>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -278,10 +302,18 @@ export default function TaxPage() {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
             <div>
-              <Label className="text-xs">Tax Expected Withheld This Year (฿)</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-xs">Tax Expected Withheld This Year (฿)</Label>
+                <Button size="sm" variant="outline" className="h-6 px-2 text-[11px]" onClick={estimateWithholding}>
+                  Estimate from plan
+                </Button>
+              </div>
               <Input {...field("taxWithheldYTD")} className="mt-1 text-sm" />
               <p className="text-xs text-muted-foreground mt-0.5">
-                Year-to-date withholding plus what you expect for the rest of the year. Leave at 0 if unsure — the simulator below will just skip the owed/refund estimate.
+                Year-to-date withholding plus what you expect for the rest of the year. "Estimate from plan" spreads your
+                estimated tax ({form.rmfDeclaredToHR ? "assuming the full RMF plan is declared to HR" : "assuming no RMF was declared to HR"})
+                evenly across the {monthsElapsed} month{monthsElapsed === 1 ? "" : "s"} elapsed so far. Leave at 0 if unsure —
+                the simulator below will just skip the owed/refund estimate.
               </p>
             </div>
             <div className="flex items-start gap-2 pt-5">
@@ -406,6 +438,20 @@ export default function TaxPage() {
             </div>
           </div>
 
+          <div>
+            <Label className="text-xs">Already Invested in RMF This Year (฿)</Label>
+            <Input
+              type="number"
+              value={form.rmfAlreadyInvested ?? 0}
+              onChange={(e) => setForm(f => ({ ...f, rmfAlreadyInvested: Math.max(0, Number(e.target.value) || 0) }))}
+              className="mt-1 text-sm max-w-[200px]"
+            />
+            <p className="text-xs text-muted-foreground mt-0.5">
+              RMF units you've already bought this calendar year. The "/mo to invest" figure below only covers what's left
+              to reach the amount you're simulating above ({thb(rmfStillToInvest)} still to go over {monthsLeft} month{monthsLeft === 1 ? "" : "s"}).
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-lg bg-muted text-center">
               <div className="text-xs text-muted-foreground mb-1">Tax at this RMF</div>
@@ -422,9 +468,16 @@ export default function TaxPage() {
               <div className="text-lg font-bold tabular-nums">{thb(Math.max(0, netCashCostOfSimRMF))}</div>
             </div>
             <div className="p-3 rounded-lg bg-muted text-center">
-              <div className="text-xs text-muted-foreground mb-1">/mo to invest ({monthsLeft} mo left)</div>
+              <div className="text-xs text-muted-foreground mb-1">/mo still to invest ({monthsLeft} mo left)</div>
               <div className="text-lg font-bold tabular-nums">{monthlyNeeded != null ? thb(monthlyNeeded) : "—"}</div>
             </div>
+          </div>
+
+          <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-xs text-blue-800 dark:text-blue-200">
+            <strong>RMF vs ThaiESG:</strong> RMF/PVD/SSF share one ฿500,000 deduction bucket (useful max above: {thb(result.maxUsefulRMF)}).
+            ThaiESG is a <em>separate</em> bucket — up to {thb(thaiEsgRoom.maxContribution)} more (30% of gross income, capped at ฿300,000),
+            on top of your RMF room, but units must be held {thaiEsgRoom.minHoldingYears} years. If you've maxed useful RMF, ThaiESG is
+            the next place to put money for additional tax relief this year.
           </div>
 
           {owedOrRefundAtFiling != null && (

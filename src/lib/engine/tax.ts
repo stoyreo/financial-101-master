@@ -432,3 +432,40 @@ export function compareTaxVsDebt(params: {
         : "Both strategies yield equal benefit.",
   };
 }
+
+// ============================================================
+// THAI ESG FUND (Thailand ESG) — separate deduction bucket from RMF/PVD/SSF
+// ────────────────────────────────────────────────────────────
+// Verified against Revenue Department rules for investments made
+// 2024–2026 (the window covering the current 2026 tax year):
+//   - Up to 30% of assessable income, capped at ฿300,000/year.
+//   - NOT combined with the RMF/PVD/SSF ฿500,000 bucket — it's a wholly
+//     separate allowance, so maxing RMF first doesn't eat into this.
+//   - 5-year minimum holding period (first purchase → anniversary date),
+//     vs RMF's hold-to-age-55. Investments made outside 2024–2026 instead
+//     cap at ฿100,000/year with an 8-year hold — not modeled here since
+//     this engine only serves the current tax year.
+// Source: https://www.bangkokbank.com/en/Personal/Save-And-Invest/Mutual-Funds/Thai-ESG-Funds
+// ============================================================
+
+export const THAI_ESG_PARAMS_2026 = {
+  maxContributionPct: 0.30,
+  maxContributionAmount: 300_000,
+  minHoldingYears: 5,
+  separateFromRetirementCap: true,
+} as const;
+
+export interface ThaiEsgRoom {
+  maxContribution: number;     // most you could put in this year and still deduct it
+  minHoldingYears: number;
+  separateFromRmfCap: boolean; // true — doesn't compete with RMF/PVD/SSF room
+}
+
+/** How much Thai ESG room someone has this year, independent of their RMF/PVD/SSF usage. */
+export function computeThaiEsgRoom(grossIncome: number): ThaiEsgRoom {
+  return {
+    maxContribution: Math.min(grossIncome * THAI_ESG_PARAMS_2026.maxContributionPct, THAI_ESG_PARAMS_2026.maxContributionAmount),
+    minHoldingYears: THAI_ESG_PARAMS_2026.minHoldingYears,
+    separateFromRmfCap: THAI_ESG_PARAMS_2026.separateFromRetirementCap,
+  };
+}

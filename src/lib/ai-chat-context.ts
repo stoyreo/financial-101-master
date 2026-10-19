@@ -169,10 +169,12 @@ export interface TaxChatSnapshot {
   rmfSimulator: {
     maxUsefulRMF: number;         // more RMF beyond this saves no extra tax (PVD/SSF cap already used up)
     simulatedRMF: number;         // what the user says they might actually manage
+    alreadyInvestedThisYear: number;
+    stillToInvest: number;        // simulatedRMF - alreadyInvestedThisYear, floored at 0
     estimatedTaxAtSimulated: number;
     extraTaxVsPlan: number;       // estimatedTaxAtSimulated - plan.estimatedTax
     netCashCostOfSimulatedRMF: number; // simulatedRMF - tax it saves vs contributing ฿0
-    monthlyAmountNeeded: number | null; // simulatedRMF spread over remaining months this year
+    monthlyAmountNeeded: number | null; // stillToInvest spread over remaining months this year
     monthsRemainingInYear: number;
   };
   withholding: {
@@ -181,6 +183,8 @@ export interface TaxChatSnapshot {
     amountOwedOrRefundAtFiling: number | null; // estimatedTaxAtSimulated - taxWithheldYTD
   };
   otherDeductions: { pvd: number; ssf: number; lifeAndHealthInsurance: number; mortgageInterest: number };
+  /** Separate ฿500k-bucket deduction — Thai ESG funds — so comparisons don't rely on the model's own recall. */
+  thaiEsg: { maxContribution: number; minHoldingYears: number; separateFromRmfCap: boolean };
 }
 
 export function buildTaxChatSnapshot(input: {
@@ -190,10 +194,14 @@ export function buildTaxChatSnapshot(input: {
   simResult: { estimatedTax: number };
   zeroRMFResult: { estimatedTax: number };
   monthsRemainingInYear: number;
+  rmfAlreadyInvested?: number;
+  thaiEsgRoom: { maxContribution: number; minHoldingYears: number; separateFromRmfCap: boolean };
 }): TaxChatSnapshot {
-  const { tax, result, simulatedRMF, simResult, zeroRMFResult, monthsRemainingInYear } = input;
+  const { tax, result, simulatedRMF, simResult, zeroRMFResult, monthsRemainingInYear, thaiEsgRoom } = input;
   const taxSavedBySimRMF = zeroRMFResult.estimatedTax - simResult.estimatedTax;
   const taxWithheldYTD = typeof tax.taxWithheldYTD === "number" && tax.taxWithheldYTD > 0 ? tax.taxWithheldYTD : null;
+  const alreadyInvested = Math.max(0, input.rmfAlreadyInvested ?? 0);
+  const stillToInvest = Math.max(0, simulatedRMF - alreadyInvested);
 
   return {
     kind: "tax",
@@ -209,10 +217,12 @@ export function buildTaxChatSnapshot(input: {
     rmfSimulator: {
       maxUsefulRMF: round(result.maxUsefulRMF),
       simulatedRMF: round(simulatedRMF),
+      alreadyInvestedThisYear: round(alreadyInvested),
+      stillToInvest: round(stillToInvest),
       estimatedTaxAtSimulated: round(simResult.estimatedTax),
       extraTaxVsPlan: round(simResult.estimatedTax - result.estimatedTax),
       netCashCostOfSimulatedRMF: round(simulatedRMF - taxSavedBySimRMF),
-      monthlyAmountNeeded: monthsRemainingInYear > 0 ? round(simulatedRMF / monthsRemainingInYear) : null,
+      monthlyAmountNeeded: monthsRemainingInYear > 0 ? round(stillToInvest / monthsRemainingInYear) : null,
       monthsRemainingInYear,
     },
     withholding: {
@@ -225,6 +235,11 @@ export function buildTaxChatSnapshot(input: {
       ssf: round(result.ssfDeduction),
       lifeAndHealthInsurance: round(result.lifeInsuranceDeduction + result.healthInsuranceDeduction),
       mortgageInterest: round(result.mortgageInterestDeduction),
+    },
+    thaiEsg: {
+      maxContribution: round(thaiEsgRoom.maxContribution),
+      minHoldingYears: thaiEsgRoom.minHoldingYears,
+      separateFromRmfCap: thaiEsgRoom.separateFromRmfCap,
     },
   };
 }
