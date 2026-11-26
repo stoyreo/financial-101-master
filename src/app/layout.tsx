@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import "./globals.css";
 import "@/styles/responsive-fold.css";
@@ -18,22 +18,34 @@ const AutoSync = dynamic(() => import("@/components/AutoSync"), { ssr: false });
 // every page in the app.
 const GlobalAiAvatar = dynamic(() => import("@/components/ai/GlobalAiAvatar"), { ssr: false });
 
+// Single viewport meta (Next also injects a default one when none is exported, which
+// previously produced a duplicate). Zoom stays enabled. theme-color matches the manifest
+// theme_color so the installed titlebar / Android task bar is consistent.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
+  themeColor: "#0B1330",
+};
+
 export const metadata: Metadata = {
   title: "Financial 101 Master crafted by Toy",
   description: "Thailand personal financial planning",
+  applicationName: "Financial 101",
+  // Safari 17+ "Add to Dock" / iOS "Add to Home Screen": Next emits
+  // apple-mobile-web-app-capable, -title, -status-bar-style and mobile-web-app-capable.
+  appleWebApp: { capable: true, title: "Financial 101", statusBarStyle: "default" },
+  formatDetection: { telephone: false },
+  other: { "mobile-web-app-capable": "yes" },
+  icons: {
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
-        <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)" />
-      </head>
       <body suppressHydrationWarning style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
         <AiStatusProvider>
           <AiSnapshotProvider>

@@ -12,7 +12,11 @@
     "check:shell-escapes": "node scripts/check-shell-escapes.mjs",
     "prebuild": "node scripts/check-shell-escapes.mjs",
     "sync:agent": "node scripts/sync-agent.mjs",
-    "dev:all": "concurrently \"npm:dev\" \"npm:sync:agent\""
+    "dev:all": "concurrently \"npm:dev\" \"npm:sync:agent\"",
+    "uat:build": "NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NEXT_PUBLIC_SUPABASE_ANON_KEY=dummy-anon-key-for-uat next build",
+    "uat": "playwright test",
+    "uat:update": "playwright test --update-snapshots",
+    "uat:prod": "PROD_SMOKE=1 playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",
@@ -37,6 +41,7 @@
     "zustand": "^4.5.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@types/node": "^20",
     "@types/nodemailer": "^6.4.14",
     "@types/react": "^18",
