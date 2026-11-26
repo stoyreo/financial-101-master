@@ -1,8 +1,8 @@
-/* Financial 101 Master service worker (v3.10.0).
+/* Financial 101 Master service worker (v3.10.1).
  * SAFETY (May 10/11 data-isolation incidents): never cache API responses, auth or
  * page HTML. Only immutable build assets and icons are cached. Bump CACHE_VERSION
  * with every release so old assets are dropped. */
-const CACHE_VERSION = "v3.10.0";
+const CACHE_VERSION = "v3.10.1";
 const STATIC_CACHE = "f101-static-" + CACHE_VERSION;
 
 const OFFLINE_HTML =
