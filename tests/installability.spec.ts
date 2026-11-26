@@ -70,11 +70,8 @@ test.describe("PWA installability (unauthenticated, read-only)", () => {
     expect(contents.some((c) => c.includes("viewport-fit=cover")), "a viewport meta carries viewport-fit=cover").toBe(true);
   });
 
-  // KNOWN DEFECT (reported, app code not changed by this suite): layout.tsx hand-writes a viewport
-  // <meta> while Next.js also injects its default one, so two conflicting viewport metas ship.
-  // test.fail() keeps CI green while the defect exists and turns red once it is fixed (remove it then).
+  // Regression guard: layout.tsx now exports `viewport`, so Next emits exactly one viewport meta.
   test("exactly one viewport meta tag", async ({ page }) => {
-    test.fail(true, "layout.tsx duplicates Next's default viewport meta (second lacks viewport-fit=cover)");
     await page.goto("/login");
     await expect(page.locator('meta[name="viewport"]')).toHaveCount(1);
   });

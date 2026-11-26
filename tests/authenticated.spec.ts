@@ -101,6 +101,10 @@ for (const path of PAGES) {
 
     test("visual baseline", async ({ page }) => {
       await openAuthed(page, path);
+      // The floating, draggable "Ask Fin" tab settles at a different spot run to run, so a mask
+      // (which only covers its current position) leaves the baseline's copy as a diff. It also mounts
+      // late (dynamic, ssr:false), so hide it with a CSS rule that applies whenever it appears.
+      await page.addStyleTag({ content: '[aria-label^="Ask Fin"]{visibility:hidden !important}' });
       // Mask text that varies with time/data: dates, currency amounts, version labels, sync status, avatar.
       const dynamic = [
         page.locator("time"),
