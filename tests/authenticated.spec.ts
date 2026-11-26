@@ -118,6 +118,14 @@ for (const path of PAGES) {
         page.getByText(/\b(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2}, \d{4}\b/),
         page.getByText(/\b\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}\b/),
       ];
+      // The select's intrinsic width and the system-font glyph widths in the AI token pill differ by 1-2px
+      // between macOS versions, which shifts adjacent controls (and at 344/412px the header buttons
+      // overflow their box, so a bounding-box mask would not cover them). Hide, without changing layout,
+      // the whole control row containing a ModelPicker select and the AITokenMeter root
+      // ("~N tokens" pill + "NK left" bar) with visibility:hidden, which also hides overflowing children.
+      await page
+        .locator('div:has(> label:has(select)), div:has(> span:text-matches("~[0-9,]+ tokens"))')
+        .evaluateAll((els) => els.forEach((el) => ((el as HTMLElement).style.visibility = "hidden")));
       await expect(page).toHaveScreenshot(`${path === "/" ? "home" : path.slice(1)}.png`, { mask: dynamic, maxDiffPixelRatio: 0.001 });
     });
   });
