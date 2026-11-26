@@ -35,4 +35,7 @@ jobs:
         with:
           name: playwright-report
           path: tests/.output/
+          # tests/.output is a dot-directory; upload-artifact@v4 skips hidden files by default,
+          # which is why the failed run had zero artifacts (no -diff.png to inspect).
+          include-hidden-files: true
           retention-days: 7

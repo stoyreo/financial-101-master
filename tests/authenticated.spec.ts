@@ -109,6 +109,9 @@ for (const path of PAGES) {
       const dynamic = [
         page.locator("time"),
         page.getByRole("button", { name: /Ask Fin/ }), // floating, draggable AI tab (GlobalAiAvatar)
+        // Native <select> (ModelPicker on /income and /forecast): Chrome draws its border/chevron through
+        // the host OS theme, so it differs between macOS versions (CI macos-latest vs. a dev Mac).
+        page.locator("select"),
         page.locator('[class*="version"], [data-testid="version"]'),
         page.locator('[class*="sync"], [class*="Sync"]'),
         page.locator('[class*="avatar"], [class*="Avatar"]'),
